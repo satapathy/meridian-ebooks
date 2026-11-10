@@ -1,5 +1,5 @@
 // Web components (light DOM, themed by app.css).
-import { api, esc, icon, toast, coverHTML, fmtBytes, emit } from "./api.js";
+import { api, esc, icon, toast, coverHTML, fmtBytes, emit, THEMES, getPref, setPref } from "./api.js";
 
 const EXT_OK = new Set("epub pdf docx doc odt rtf txt md html htm mobi azw azw3 kfx fb2 djvu cbz cbr cb7 lit chm pdb zip".split(" "));
 const extOf = (n) => n.split(".").pop().toLowerCase();
@@ -354,3 +354,27 @@ class MxExport extends HTMLElement {
   close() { this.classList.remove("open"); this.innerHTML = ""; }
 }
 customElements.define("mx-export", MxExport);
+
+// ------------------------------------------------------------------ <mx-settings>
+class MxSettings extends HTMLElement {
+  open() { this.classList.add("open"); this.render(); }
+  close() { this.classList.remove("open"); this.innerHTML = ""; }
+  render() {
+    const theme = getPref("theme", "aurora"), borders = getPref("borders", "on") !== "off";
+    this.innerHTML = `<div class="scrim" style="position:absolute;inset:0;background:rgba(2,2,10,.6);backdrop-filter:blur(4px)"></div>
+      <div class="dialog glass" role="dialog" aria-label="Settings">
+        <h2>Settings</h2>
+        <div class="muted small">Saved in this browser.</div>
+        <h3 style="font-size:13px;text-transform:uppercase;letter-spacing:.12em;color:var(--muted);margin-top:20px">Theme</h3>
+        <div class="theme-grid">${Object.entries(THEMES).map(([k, [name, bg]]) =>
+          `<button class="theme-opt" data-t="${k}" aria-pressed="${k === theme}"><i style="background:${bg}"></i>${name}</button>`).join("")}</div>
+        <div class="row-set"><div><b>Cover borders</b><div class="small muted">Draw a border around every book cover</div></div>
+          <button class="switch" role="switch" id="sw-borders" aria-checked="${borders}" aria-label="Cover borders"></button></div>
+        <div class="dialog-actions"><button class="btn primary" id="done">Done</button></div>
+      </div>`;
+    this.querySelector(".scrim").onclick = this.querySelector("#done").onclick = () => this.close();
+    this.querySelectorAll("[data-t]").forEach((b) => (b.onclick = () => { setPref("theme", b.dataset.t); this.render(); }));
+    this.querySelector("#sw-borders").onclick = () => { setPref("borders", borders ? "off" : "on"); this.render(); };
+  }
+}
+customElements.define("mx-settings", MxSettings);

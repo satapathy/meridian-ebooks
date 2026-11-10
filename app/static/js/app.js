@@ -1,4 +1,4 @@
-import { api, esc, icon, toast, coverHTML, hue, fmtBytes, emit } from "./api.js";
+import { api, esc, icon, toast, coverHTML, hue, fmtBytes, emit, applyPrefs } from "./api.js";
 import "./components.js";
 
 const view = document.getElementById("view");
@@ -9,19 +9,11 @@ document.querySelectorAll("[data-icon]").forEach((el) => (el.innerHTML = icon(el
 const NAV = { home: ["home", "Home"], library: ["library", "Library"], authors: ["users", "Authors"], categories: ["folder", "Categories"], tools: ["tools", "Tools"] };
 document.querySelectorAll("#nav a").forEach((a) => { const [i, l] = NAV[a.dataset.route]; a.innerHTML = `${icon(i)}<span>${l}</span>`; });
 
-const THEMES = { aurora: "linear-gradient(135deg,#7c5cff,#22d3ee)", neon: "linear-gradient(135deg,#2dff9a,#00e0ff)", paper: "linear-gradient(135deg,#f4f1ea,#c2410c)" };
-function setTheme(t) {
-  document.documentElement.dataset.theme = t;
-  try { localStorage.setItem("mx-theme", t); } catch {}
-  document.querySelectorAll("#themes button").forEach((b) => b.setAttribute("aria-pressed", b.dataset.t === t));
-}
-document.getElementById("themes").innerHTML = Object.entries(THEMES).map(([t, g]) => `<button data-t="${t}" title="${t}" style="background:${g}" aria-label="${t} theme"></button>`).join("");
-document.getElementById("themes").onclick = (e) => { const t = e.target.dataset.t; if (t) setTheme(t); };
-let saved = "aurora"; try { saved = localStorage.getItem("mx-theme") || saved; } catch {}
-setTheme(THEMES[saved] ? saved : "aurora");
+applyPrefs();
 
 const $ = (id) => document.getElementById(id);
 $("btn-upload").onclick = () => $("upload").open();
+$("btn-settings").onclick = () => $("settings").open();
 $("btn-export").onclick = () => $("export").open();
 
 // Global drag & drop anywhere on the page.

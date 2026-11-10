@@ -24,7 +24,6 @@
       <a href="#/tools" data-route="tools"></a>
     </nav>
     <div class="rail-foot">
-      <div class="themes" id="themes" title="Theme"></div>
       <div class="muted small" id="rail-stats"></div>
       <a class="small muted" href="/docs" target="_blank" rel="noopener">API · Swagger ↗</a>
     </div>
@@ -38,6 +37,7 @@
         <kbd>/</kbd>
         <button type="button" class="help" id="search-help" aria-label="Search syntax">?</button>
       </form>
+      <button class="btn ghost" id="btn-settings" aria-label="Settings" title="Settings"><span data-icon="settings"></span></button>
       <button class="btn ghost" id="btn-export"><span data-icon="download"></span><span class="lbl">Export</span></button>
       <button class="btn primary" id="btn-upload"><span data-icon="upload"></span><span class="lbl">Add books</span></button>
     </header>
@@ -48,6 +48,7 @@
 <mx-drawer id="drawer"></mx-drawer>
 <mx-upload id="upload"></mx-upload>
 <mx-export id="export"></mx-export>
+<mx-settings id="settings"></mx-settings>
 <div class="dropveil" id="dropveil"><div>Drop books or folders to add them</div></div>
 <div id="toasts" aria-live="polite"></div>
 

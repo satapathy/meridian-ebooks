@@ -51,6 +51,7 @@ const ICONS = {
   star: "M12 2l3 6.9 7.5.7-5.7 5 1.7 7.4L12 18l-6.5 4 1.7-7.4-5.7-5 7.5-.7z",
   image: "M4 5h16v14H4z M8.5 10a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3z M20 16l-5-5-8 8",
   book: "M4 19.5A2.5 2.5 0 0 1 6.5 17H20V3H6.5A2.5 2.5 0 0 0 4 5.5z M20 17v4H6.5A2.5 2.5 0 0 1 4 18.5",
+  settings: "M4 21v-7 M4 10V3 M12 21v-9 M12 8V3 M20 21v-5 M20 12V3 M1 14h6 M9 8h6 M17 16h6",
   save: "M5 3h11l4 4v14H5z M8 3v6h7V3 M8 21v-7h8v7",
 };
 export const icon = (n) =>
@@ -80,3 +81,17 @@ export function coverHTML(b) {
 }
 
 export const emit = (name, detail) => document.dispatchEvent(new CustomEvent(name, { detail }));
+
+// ---- user preferences (theme, cover borders), persisted per browser
+export const THEMES = {
+  aurora: ["Aurora", "linear-gradient(135deg,#7c5cff,#22d3ee)"],
+  neon: ["Neon", "linear-gradient(135deg,#2dff9a,#00e0ff)"],
+  paper: ["Paper", "linear-gradient(135deg,#f4f1ea,#c2410c)"],
+};
+export function getPref(k, d) { try { return localStorage.getItem("mx-" + k) ?? d; } catch { return d; } }
+export function setPref(k, v) { try { localStorage.setItem("mx-" + k, v); } catch {} applyPrefs(); }
+export function applyPrefs() {
+  const t = getPref("theme", "aurora");
+  document.documentElement.dataset.theme = THEMES[t] ? t : "aurora";
+  document.documentElement.dataset.borders = getPref("borders", "on") === "off" ? "off" : "on";
+}
