@@ -296,6 +296,7 @@ mx-card:hover .poster { box-shadow: 0 26px 50px -18px color-mix(in srgb, var(--a
 .progress { height: 8px; border-radius: 999px; background: var(--glass-2); overflow: hidden; margin: 14px 0 6px; }
 .progress i { display: block; height: 100%; width: 0; border-radius: inherit; background: linear-gradient(90deg, var(--a1), var(--a2), var(--a3)); background-size: 200% 100%; transition: width .3s; animation: flow 2s linear infinite; }
 @keyframes flow { to { background-position: -200% 0; } }
+.progress.done i { animation: none; background-size: 100% 100%; transition: none; }
 .counts { display: flex; gap: 8px; flex-wrap: wrap; margin: 8px 0; }
 .log { max-height: 180px; overflow: auto; font-size: 0.7812rem; border: 1px solid var(--line); border-radius: 12px; padding: 8px 12px; margin-top: 10px; }
 .log div { padding: 3px 0; display: flex; gap: 8px; } .log em { font-style: normal; color: var(--a3); flex: none; }

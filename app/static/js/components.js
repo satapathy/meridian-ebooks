@@ -299,9 +299,9 @@ class MxUpload extends HTMLElement {
     let sent = 0;
     const status = $("#status");
     const fmtVal = (v) => (Array.isArray(v) ? v.join(", ") : v ?? "") || "∅";
-    const paint = () => {
-      status.innerHTML = `<div class="progress"><i style="width:${(sent / total) * 100}%"></i></div>
-        <div class="muted small">${sent} / ${total} processed</div>
+    const paint = (finished = false) => {
+      status.innerHTML = `<div class="progress${finished ? " done" : ""}"><i style="width:${(sent / total) * 100}%"></i></div>
+        <div class="muted small">${sent} / ${total} processed${finished ? " · done" : ""}</div>
         <div class="counts"><span class="pill in">${tally.created} added</span><span class="pill in">${tally.updated} metadata updated</span><span class="pill">${tally.duplicate} duplicates</span><span class="pill">${tally.skipped} skipped</span><span class="pill side">${tally.warning} warnings</span><span class="pill side">${tally.error} errors</span></div>
         ${issues.length ? `<div class="log">${issues.slice(0, 300).map((i) => `<div class="${i.status}"><em>${i.status}</em><span>${esc(i.filename)}${i.title ? " → “" + esc(i.title) + "”" : ""}${i.detail ? " — " + esc(i.detail) : ""}${
           i.status === "warning" && i.diffs ? `<ul class="diffs">${i.diffs.map((d) => `<li><b>${esc(d.field)}</b>: <s>${esc(fmtVal(d.current))}</s> → ${esc(fmtVal(d.imported))}</li>`).join("")}</ul>` : ""}</span></div>`).join("")}</div>` : ""}`;
@@ -345,7 +345,9 @@ class MxUpload extends HTMLElement {
     await runPhase(makeBatches(items.filter((i) => !isJson(i))), 3);   // 1) books
     await runPhase(makeBatches(items.filter(isJson)), 1);               // 2) metadata JSON
     this.busy = false; this.done = true; this.queue = [];
+    paint(true);  // stops the bar's shimmer animation
     $("#cancel").disabled = false; $("#cancel").textContent = "Close";
+    $("#cancel").focus();  // Enter / Space now closes the dialog
     toast(`${tally.created} added · ${tally.updated} metadata updated${tally.warning ? " · " + tally.warning + " warnings" : ""}`, tally.error || tally.warning ? "err" : "ok");
     emit("library-changed");
   }
