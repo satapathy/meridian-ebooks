@@ -1,6 +1,38 @@
 # Meridian Ebooks
 
 A dockerized, self-hosted ebook library: FastAPI backend with a Swagger page, and a Plex-style browser UI.
+Runs in one container, including on a Raspberry Pi.
+
+## Highlights
+
+*One bullet per feature - add or remove lines as the app changes. Details live in [Features](#features).*
+
+**Library**
+* Upload files, whole folders (recursive) or `.zip` archives; EPUB, PDF, DOCX, MOBI, AZW3, FB2, TXT, CBZ and more
+* Plex-style cover wall with infinite scroll, series grouping, Authors, Categories and Recently added views
+* Generated covers for books without one; replace any cover with your own image
+* Server-side UUID per book, MD5 duplicate detection and one-call cleanup
+* Sharded folder storage derived from the UUID (`1234/5678/abcd/…`)
+
+**Metadata**
+* Edit title, subtitle, author, publisher, series, category, subcategory, tags, ISBN, rating and more
+* Written into the file for EPUB, PDF and DOCX; stored in a `book-name-info.json` sidecar for other formats
+* Title and file name are independent; rename the file separately
+* Import metadata from JSON, with a warning and diff when it would overwrite existing values
+
+**Search and export**
+* Wildcards (`*`, `?`), field scopes (`author:`, `title:`, `tag:`…), quoted phrases and `-exclusions`
+* Export the library as a ZIP organised by category or author, with metadata and covers included
+
+**Interface and API**
+* Ten themes (plain Vanilla by default), eleven open-source fonts, adjustable text size and cover borders
+* Every action is a REST endpoint, documented with Swagger at `/docs`
+* No front-end build step: plain ES modules and native web components
+
+**Deployment**
+* Docker Compose with a configurable data folder, port and run-as user
+* Restarts automatically after a reboot (see the Raspberry Pi section)
+* No built-in authentication - put it behind a reverse proxy or VPN before exposing it
 
 ## Setting up the data folder
 
