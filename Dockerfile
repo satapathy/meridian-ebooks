@@ -1,3 +1,21 @@
+# ---- build stage: has a compiler so packages without prebuilt wheels (e.g. Pillow on 32-bit ARM) can be built
+FROM python:3.12-slim AS build
+
+ENV PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    PIP_EXTRA_INDEX_URL=https://www.piwheels.org/simple
+
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends gcc libjpeg-dev zlib1g-dev \
+ && rm -rf /var/lib/apt/lists/*
+
+# Runtime deps only (pytest/httpx are for the test suite)
+COPY requirements.txt .
+RUN grep -viE '^(pytest|httpx)' requirements.txt > requirements.runtime.txt \
+ && pip install --prefix=/install -r requirements.runtime.txt
+
+
+# ---- runtime stage
 FROM python:3.12-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
@@ -5,13 +23,14 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     DATA_DIR=/data \
     IMPORT_DIR=/import
 
+# shared libraries Pillow links against when it was compiled in the build stage
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends libjpeg62-turbo \
+ && rm -rf /var/lib/apt/lists/*
+
+COPY --from=build /install /usr/local
+
 WORKDIR /srv
-
-# Runtime deps only (pytest/httpx are for the test suite)
-COPY requirements.txt .
-RUN grep -viE '^(pytest|httpx)' requirements.txt > requirements.runtime.txt \
- && pip install --no-cache-dir -r requirements.runtime.txt
-
 COPY app ./app
 
 RUN useradd --create-home --uid 1000 meridian \
