@@ -32,6 +32,7 @@ COPY --from=build /install /usr/local
 
 WORKDIR /srv
 COPY app ./app
+COPY version.json ./version.json
 
 RUN useradd --create-home --uid 1000 meridian \
  && mkdir -p /data /import && chown meridian /data

@@ -368,4 +368,10 @@ function suggestTool(box) {
 }
 
 refreshRail();
+(async () => {
+  try {
+    const v = await api("/version", { quiet: true });
+    $("build").textContent = `v${v.version}` + (v.build != null ? ` · build ${v.build}` : "");
+  } catch {}
+})();
 render();

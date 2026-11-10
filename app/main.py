@@ -1,8 +1,9 @@
+import json
 from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from . import __version__
@@ -51,7 +52,29 @@ app.include_router(books.router, prefix="/api")
 app.include_router(upload.router, prefix="/api")
 app.include_router(library.router, prefix="/api")
 app.include_router(lookup.router, prefix="/api")
-app.mount("/static", StaticFiles(directory=STATIC), name="static")
+class NoCacheStatic(StaticFiles):
+    """Always revalidate, so a rebuilt image shows up on a normal reload (ETag keeps it cheap)."""
+
+    def file_response(self, *args, **kwargs):
+        resp = super().file_response(*args, **kwargs)
+        resp.headers["Cache-Control"] = "no-cache"
+        return resp
+
+
+app.mount("/static", NoCacheStatic(directory=STATIC), name="static")
+
+VERSION_FILE = Path(__file__).parent.parent / "version.json"
+
+
+@app.get("/api/version", tags=["Library"], summary="Version and build number")
+def version():
+    """Contents of `version.json` in the project root (read on each call)."""
+    info = {"version": __version__, "build": None}
+    try:
+        info.update(json.loads(VERSION_FILE.read_text(encoding="utf-8")))
+    except (OSError, ValueError):
+        pass
+    return JSONResponse(info, headers={"Cache-Control": "no-store"})
 
 
 @app.get("/", include_in_schema=False)

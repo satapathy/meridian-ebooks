@@ -85,6 +85,8 @@ mkdir -p data
 docker compose up --build -d
 ```
 
+**Check you are running the new build.** The version and build number are shown under the logo (top left of the UI) and at `GET /api/version`. They come from `version.json` in the project root. Run `python scripts/bump_build.py` before building to increase the build number, then confirm the UI shows it. If it still shows the old number, the image was not rebuilt (use `docker compose build --no-cache`); if the number is new but the UI looks old, do a hard refresh (Ctrl+Shift+R).
+
 ## Screenshots
 
 <!-- Images live in docs/screenshots/. Regenerate them with scripts/capture_screenshots.py (see Development). -->
