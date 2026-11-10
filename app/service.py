@@ -266,6 +266,26 @@ def update_book(book_id: str, patch: dict) -> dict:
         return to_book(_get_row(conn, book_id))
 
 
+def bulk_update(ids: list[str], patch: dict, tags_mode: str = "replace") -> dict:
+    """Apply the same field changes to many books. One bad id never blocks the rest.
+    tags_mode "add" appends the given tags to each book's own tags instead of replacing them."""
+    if not _normalise_patch(patch):          # validates once, up front (e.g. rating range)
+        raise BadRequest("No fields to update")
+    books, failed = [], []
+    for bid in dict.fromkeys(ids):
+        try:
+            p = dict(patch)
+            if "tags" in p and tags_mode == "add":
+                add = json.loads(_normalise_patch({"tags": p["tags"]})["tags"])
+                p["tags"] = [*get_book(bid)["tags"], *add]
+            books.append(update_book(bid, p))
+        except BookNotFound:
+            failed.append({"id": bid, "error": "Book not found"})
+        except BadRequest as exc:
+            failed.append({"id": bid, "error": str(exc)})
+    return {"updated": len(books), "failed": failed, "books": books}
+
+
 def rename_file(book_id: str, new_name: str) -> dict:
     """Rename the file on disk. Deliberately independent of the book title."""
     with _write_lock, db() as conn:
@@ -336,6 +356,9 @@ SORTS = {
     "added": "added_at", "updated": "updated_at", "size": "size",
     "published": "published", "series": "series COLLATE NOCASE, series_index",
     "format": "format", "category": "category COLLATE NOCASE", "rating": "rating",
+    "subtitle": "subtitle COLLATE NOCASE", "series_index": "series_index", "subcategory": "subcategory COLLATE NOCASE",
+    "tags": "tags COLLATE NOCASE", "publisher": "publisher COLLATE NOCASE", "language": "language COLLATE NOCASE",
+    "isbn": "isbn", "filename": "filename COLLATE NOCASE", "description": "description COLLATE NOCASE",
 }
 
 

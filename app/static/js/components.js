@@ -327,6 +327,68 @@ class MxFetchMeta extends HTMLElement {
 }
 customElements.define("mx-fetchmeta", MxFetchMeta);
 
+// ------------------------------------------------------------------ <mx-bulkedit>
+const BULK_FIELDS = [["category", "Category"], ["subcategory", "Sub-category"], ["tags", "Tags"], ["author", "Author(s)"],
+  ["series", "Series"], ["publisher", "Publisher"], ["published", "Published"], ["language", "Language"], ["rating", "Rating"]];
+
+/** Set the same fields on many books: tick a field to change it, leave it unticked to keep each book's own value. */
+class MxBulkEdit extends HTMLElement {
+  async open(ctx) {
+    this.ctx = ctx;
+    this.classList.add("open");
+    this._esc = (e) => { if (e.key === "Escape") { e.stopImmediatePropagation(); this.close(); } };
+    document.addEventListener("keydown", this._esc, true);
+    let cats = [];
+    try { cats = (await api("/facets", { quiet: true })).categories.filter((c) => c.name !== "Uncategorized"); } catch {}
+    if (!this.classList.contains("open")) return;
+    const n = ctx.ids.length;
+    const input = (k) => (k === "rating"
+      ? `<select class="in" data-in="rating">${[0, 1, 2, 3, 4, 5].map((i) => `<option value="${i}">${i ? "★".repeat(i) : "No rating"}</option>`).join("")}</select>`
+      : `<input class="in" data-in="${k}"${k === "category" ? ' list="bk-cats"' : ""} placeholder="${k === "tags" ? "comma separated" : k === "published" ? "YYYY or YYYY-MM-DD" : k === "language" ? "en" : ""}">`);
+    this.innerHTML = `<div class="scrim" style="position:absolute;inset:0;background:rgba(2,2,10,.6);backdrop-filter:blur(4px)"></div>
+      <div class="dialog glass bk" role="dialog" aria-label="Edit ${n} books">
+        <h2>Edit ${n} book${n === 1 ? "" : "s"}</h2>
+        <div class="muted small">Tick the fields to change. Unticked fields keep each book's own value. A ticked field left empty is cleared.</div>
+        <div class="bk-grid">${BULK_FIELDS.map(([k, label]) => `<label class="check bk-on"><input type="checkbox" data-on="${k}"><span>${label}</span></label>
+          <div class="bk-in">${input(k)}${k === "tags" ? `<div class="bk-mode small"><label class="check"><input type="radio" name="tmode" value="add" checked><span>Add to each book's tags</span></label>
+            <label class="check"><input type="radio" name="tmode" value="replace"><span>Replace all tags</span></label></div>` : ""}</div>`).join("")}</div>
+        <datalist id="bk-cats">${cats.map((c) => `<option value="${esc(c.name)}">`).join("")}</datalist>
+        <div class="dialog-actions"><span class="muted small" id="bk-count" style="margin-right:auto"></span>
+          <button class="btn" id="bk-cancel">Cancel</button><button class="btn primary" id="bk-apply">${icon("save")}Apply to ${n}</button></div>
+      </div>`;
+    const $ = (s) => this.querySelector(s), apply = $("#bk-apply");
+    $(".scrim").onclick = $("#bk-cancel").onclick = () => this.close();
+    const ticked = () => BULK_FIELDS.map(([k]) => k).filter((k) => $(`[data-on="${k}"]`).checked);
+    const refresh = () => {
+      const t = ticked();
+      for (const [k] of BULK_FIELDS) $(`[data-in="${k}"]`).disabled = !t.includes(k);
+      const clearing = t.filter((k) => k !== "rating" && !$(`[data-in="${k}"]`).value.trim());
+      apply.disabled = !t.length;
+      $("#bk-count").textContent = t.length ? `${t.length} field${t.length > 1 ? "s" : ""} will change${clearing.length ? ` · ${clearing.join(", ")} will be cleared` : ""}` : "Nothing ticked";
+    };
+    this.querySelectorAll("[data-on]").forEach((c) => (c.onchange = () => { refresh(); if (c.checked) $(`[data-in="${c.dataset.on}"]`).focus(); }));
+    this.querySelectorAll("[data-in]").forEach((i) => i.addEventListener("input", refresh));
+    refresh();
+    apply.onclick = async () => {
+      const fields = {};
+      for (const k of ticked()) { const v = $(`[data-in="${k}"]`).value; fields[k] = k === "rating" ? Number(v) : v.trim(); }
+      apply.disabled = true; apply.textContent = "Saving…";
+      try {
+        const res = await api("/books/bulk-update", { json: { ids: ctx.ids, fields, tags_mode: this.querySelector('[name="tmode"]:checked')?.value || "replace" } });
+        ctx.applied(res);
+        this.close();
+        toast(`Updated ${res.updated} book${res.updated === 1 ? "" : "s"}${res.failed.length ? ` · ${res.failed.length} failed` : ""}`, res.failed.length ? "err" : undefined);
+      } catch (e) { toast(e.message || "Could not update", "err"); apply.disabled = false; apply.textContent = `Apply to ${n}`; }
+    };
+    $("[data-on]").focus();
+  }
+  close() {
+    this.classList.remove("open"); this.innerHTML = "";
+    document.removeEventListener("keydown", this._esc, true);
+  }
+}
+customElements.define("mx-bulkedit", MxBulkEdit);
+
 // ------------------------------------------------------------------ <mx-upload>
 async function walkEntry(entry, path = "") {
   if (entry.isFile) return new Promise((res) => entry.file((file) => res([{ file, rel: path + entry.name, folder: !!path }]), () => res([])));

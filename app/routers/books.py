@@ -5,7 +5,7 @@ from fastapi import APIRouter, File, HTTPException, Query, Response, UploadFile
 from fastapi.responses import FileResponse
 
 from .. import service
-from ..schemas import Book, BookPage, BookUpdate, RenameFile
+from ..schemas import Book, BookPage, BookUpdate, BulkResult, BulkUpdate, RenameFile
 
 router = APIRouter(prefix="/books", tags=["Books"])
 
@@ -28,7 +28,9 @@ def list_books(
     subcategory: Optional[str] = Query(None, description="Exact sub-category"),
     tag: Optional[str] = None,
     series: Optional[str] = None,
-    sort: Literal["title", "author", "added", "updated", "size", "published", "series", "format", "category", "rating"] = "added",
+    sort: Literal["title", "author", "added", "updated", "size", "published", "series", "format", "category", "rating",
+                  "subtitle", "series_index", "subcategory", "tags", "publisher", "language", "isbn", "filename",
+                  "description"] = "added",
     order: Literal["asc", "desc"] = "desc",
     limit: int = Query(60, ge=1, le=500),
     offset: int = Query(0, ge=0),
@@ -106,6 +108,19 @@ def update_book(book_id: str, body: BookUpdate):
         return service.update_book(book_id, body.model_dump(exclude_unset=True))
     except service.BookNotFound:
         raise HTTPException(404, "Book not found")
+    except service.BadRequest as e:
+        raise HTTPException(400, str(e))
+
+
+@router.post(
+    "/bulk-update", response_model=BulkResult, summary="Apply the same metadata changes to many books",
+    description=("Sends `fields` (same shape as `PATCH /books/{id}`) to every book in `ids`. Only the fields you include are "
+                 "changed; send an empty string to clear one. `tags_mode: add` appends the tags to each book's own tags "
+                 "instead of replacing them. A missing id is reported in `failed` and does not stop the others."),
+)
+def bulk_update(body: BulkUpdate):
+    try:
+        return service.bulk_update(body.ids, body.fields.model_dump(exclude_unset=True), body.tags_mode)
     except service.BadRequest as e:
         raise HTTPException(400, str(e))
 

@@ -267,8 +267,8 @@ mx-drawer.open { display: block; }
 .inline { display: flex; gap: 8px; align-items: center; } .inline .in { flex: 1; } .inline .ext { color: var(--muted); }
 
 /* ============ Dialogs ============ */
-mx-upload, mx-export, mx-settings, mx-fetchmeta { position: fixed; inset: 0; z-index: 70; display: none; place-items: center; padding: 20px; }
-mx-upload.open, mx-export.open, mx-settings.open, mx-fetchmeta.open { display: grid; }
+mx-upload, mx-export, mx-settings, mx-fetchmeta, mx-bulkedit { position: fixed; inset: 0; z-index: 70; display: none; place-items: center; padding: 20px; }
+mx-upload.open, mx-export.open, mx-settings.open, mx-fetchmeta.open, mx-bulkedit.open { display: grid; }
 
 /* Cover frame: --bw is the border thickness (Settings). 0 = bare cover stretched to fill (FitXY). */
 :root { --bw: 6px; }
@@ -408,12 +408,12 @@ table.books { border-collapse: separate; border-spacing: 0; width: max-content; 
 table.books th { position: sticky; top: 0; z-index: 2; text-align: left; white-space: nowrap; padding: 10px 12px; font-size: .72rem; font-weight: 600; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); background: color-mix(in srgb, var(--bg2) 94%, transparent); backdrop-filter: blur(10px); border-bottom: 1px solid var(--line); }
 table.books th.sortable { cursor: pointer; user-select: none; }
 table.books th.sortable:hover, table.books th.sorted { color: var(--text); }
-table.books td { padding: 8px 12px; border-bottom: 1px solid var(--line); vertical-align: middle; max-width: 280px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+table.books td { padding: 6px 12px; border-bottom: 1px solid var(--line); vertical-align: middle; max-width: 280px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 table.books tbody tr { cursor: pointer; outline: 0; transition: background .12s; }
 table.books tbody tr:hover, table.books tbody tr:focus-visible { background: color-mix(in srgb, var(--a1) 10%, transparent); }
 table.books tbody tr:focus-visible { box-shadow: inset 3px 0 0 var(--a1); }
-table.books td.c-cover, table.books th.c-cover { width: 52px; padding-right: 4px; }
-table.books .thumb { width: 36px; aspect-ratio: 2/3; border-radius: 4px; overflow: hidden; box-shadow: var(--shadow); }
+table.books td.c-cover, table.books th.c-cover { width: 30px; padding-right: 0; padding-left: 4px; }
+table.books .thumb { width: 18px; aspect-ratio: 2/3; border-radius: 4px; overflow: hidden; box-shadow: var(--shadow); }
 table.books td.c-title { min-width: 200px; max-width: 320px; }
 table.books td.c-wide { min-width: 150px; }
 table.books td.c-num { text-align: right; font-variant-numeric: tabular-nums; }
@@ -422,3 +422,17 @@ table.books td.c-desc-cell { min-width: 260px; max-width: 360px; }
 table.books .c-desc { display: block; overflow: hidden; text-overflow: ellipsis; }
 table.books .tag { padding: 1px 8px; font-size: .7rem; cursor: inherit; }
 .stars-txt { color: #ffd166; letter-spacing: 1px; }
+
+/* ---- List view: selection + bulk edit ---- */
+table.books td.c-sel, table.books th.c-sel { width: 38px; padding: 0 0 0 12px; cursor: default; }
+table.books .c-sel input { width: 16px; height: 16px; accent-color: var(--a1); cursor: pointer; vertical-align: middle; }
+table.books tbody tr.sel { background: color-mix(in srgb, var(--a1) 16%, transparent); }
+.bulkbar { position: fixed; z-index: 50; left: 50%; bottom: 22px; transform: translateX(-50%); display: flex; align-items: center; gap: 10px; padding: 10px 14px; border-radius: 16px; box-shadow: var(--shadow); background: color-mix(in srgb, var(--bg2) 94%, transparent); animation: pop .22s cubic-bezier(.2,.8,.2,1); }
+.bulkbar[hidden] { display: none; }
+@media (max-width: 860px) { .bulkbar { bottom: 78px; } }
+.dialog.bk { width: min(620px, 100%); }
+.bk-grid { display: grid; grid-template-columns: 150px 1fr; gap: 10px 14px; align-items: start; margin-top: 16px; }
+.bk-on { padding-top: 8px; }
+.bk-in { display: flex; flex-direction: column; gap: 8px; }
+.bk-in .in:disabled { opacity: .45; }
+.bk-mode { display: flex; gap: 16px; flex-wrap: wrap; }

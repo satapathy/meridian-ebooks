@@ -1,4 +1,4 @@
-from typing import Optional, Union
+from typing import Literal, Optional, Union
 
 from pydantic import BaseModel, Field
 
@@ -63,6 +63,23 @@ class BookUpdate(BaseModel):
     series: Optional[str] = None
     series_index: Optional[float] = None
     rating: Optional[int] = Field(None, ge=0, le=5)
+
+
+class BulkUpdate(BaseModel):
+    ids: list[str] = Field(..., min_length=1, max_length=2000, description="Books to change")
+    fields: BookUpdate = Field(..., description="The fields to set on every book (only the ones you include)")
+    tags_mode: Literal["replace", "add"] = Field("replace", description="With `add`, `fields.tags` are appended to each book's own tags")
+
+
+class BulkFailure(BaseModel):
+    id: str
+    error: str
+
+
+class BulkResult(BaseModel):
+    updated: int
+    failed: list[BulkFailure]
+    books: list[Book] = Field(description="The updated books")
 
 
 class RenameFile(BaseModel):

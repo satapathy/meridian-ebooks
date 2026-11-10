@@ -80,3 +80,38 @@ def test_cleanup_does_not_delete_a_book_that_is_being_ingested(client, monkeypat
     assert b.status_code == 200
     assert client.get(f"/api/books/{res['book_id']}/download").status_code == 200
     assert outcome["orphan_folders_removed"] == []
+
+
+# --------------------------------------------------------------------------- bulk update + all sort columns
+def test_bulk_update_sets_chosen_fields_only(client):
+    ids = []
+    for i in range(3):
+        r = client.post("/api/books/upload", files=[("files", (f"b{i}.epub", make_epub(title=f"Bulk {i}", author="A. Writer", marker=f"bk{i}")))])
+        ids.append(r.json()["results"][0]["book_id"])
+    client.patch(f"/api/books/{ids[0]}", json={"tags": ["keep"], "publisher": "Orig"})
+    r = client.post("/api/books/bulk-update", json={"ids": ids + ["missing"], "fields": {"category": "Sci-Fi", "subcategory": "Space"}})
+    assert r.status_code == 200, r.text
+    d = r.json()
+    assert d["updated"] == 3 and d["failed"] == [{"id": "missing", "error": "Book not found"}]
+    for b in d["books"]:
+        assert (b["category"], b["subcategory"], b["author"]) == ("Sci-Fi", "Space", "A. Writer")
+    assert client.get(f"/api/books/{ids[0]}").json()["publisher"] == "Orig"                      # untouched field kept
+    # tags: add keeps each book's own tags, replace overwrites; an empty string clears a field
+    client.post("/api/books/bulk-update", json={"ids": ids, "fields": {"tags": "new, extra"}, "tags_mode": "add"})
+    assert client.get(f"/api/books/{ids[0]}").json()["tags"] == ["keep", "new", "extra"]
+    client.post("/api/books/bulk-update", json={"ids": ids, "fields": {"tags": ["only"]}})
+    assert client.get(f"/api/books/{ids[0]}").json()["tags"] == ["only"]
+    client.post("/api/books/bulk-update", json={"ids": ids, "fields": {"subcategory": ""}})
+    assert client.get(f"/api/books/{ids[1]}").json()["subcategory"] == ""
+    assert client.post("/api/books/bulk-update", json={"ids": ids, "fields": {}}).status_code == 400
+    assert client.post("/api/books/bulk-update", json={"ids": ids, "fields": {"rating": 9}}).status_code in (400, 422)
+    assert client.post("/api/books/bulk-update", json={"ids": [], "fields": {"category": "x"}}).status_code == 422
+
+
+def test_every_list_column_is_sortable(client):
+    client.post("/api/books/upload", files=[("files", ("s.epub", make_epub(title="Sortable", marker="so1")))])
+    for key in ("title", "subtitle", "author", "series", "series_index", "category", "subcategory", "tags", "publisher",
+                "published", "language", "isbn", "rating", "format", "size", "added", "filename", "description"):
+        for group in ("false", "true"):
+            r = client.get("/api/books", params={"sort": key, "order": "asc", "group_series": group})
+            assert r.status_code == 200 and r.json()["total"] == 1, (key, group, r.text)

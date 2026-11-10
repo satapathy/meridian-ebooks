@@ -92,31 +92,37 @@ const card = (b) => { const c = document.createElement("mx-card"); c.book = b; r
 const dash = (v) => (v ? esc(v) : `<span class="muted">-</span>`);
 const COLS = [
   ["title", "Title", "title", (b) => `<b>${esc(b.title)}</b>`, "c-title"],
-  ["subtitle", "Subtitle", null, (b) => dash(b.subtitle), "c-wide"],
+  ["subtitle", "Subtitle", "subtitle", (b) => dash(b.subtitle), "c-wide"],
   ["author", "Author(s)", "author", (b) => dash(b.author), "c-wide"],
   ["series", "Series", "series", (b) => dash(b.series), ""],
-  ["series_index", "#", null, (b) => (b.series_index != null ? esc(String(b.series_index)) : `<span class="muted">-</span>`), "c-num"],
+  ["series_index", "#", "series_index", (b) => (b.series_index != null ? esc(String(b.series_index)) : `<span class="muted">-</span>`), "c-num"],
   ["category", "Category", "category", (b) => dash(b.category), ""],
-  ["subcategory", "Sub-category", null, (b) => dash(b.subcategory), ""],
-  ["tags", "Tags", null, (b) => (b.tags.length ? b.tags.map((t) => `<span class="tag">${esc(t)}</span>`).join(" ") : `<span class="muted">-</span>`), "c-wide"],
-  ["publisher", "Publisher", null, (b) => dash(b.publisher), ""],
+  ["subcategory", "Sub-category", "subcategory", (b) => dash(b.subcategory), ""],
+  ["tags", "Tags", "tags", (b) => (b.tags.length ? b.tags.map((t) => `<span class="tag">${esc(t)}</span>`).join(" ") : `<span class="muted">-</span>`), "c-wide"],
+  ["publisher", "Publisher", "publisher", (b) => dash(b.publisher), ""],
   ["published", "Published", "published", (b) => dash(b.published), ""],
-  ["language", "Lang", null, (b) => dash(b.language), "c-num"],
-  ["isbn", "ISBN", null, (b) => dash(b.isbn), "c-mono"],
+  ["language", "Lang", "language", (b) => dash(b.language), "c-num"],
+  ["isbn", "ISBN", "isbn", (b) => dash(b.isbn), "c-mono"],
   ["rating", "Rating", "rating", (b) => (b.rating ? `<span class="stars-txt">${"★".repeat(b.rating)}</span>` : `<span class="muted">-</span>`), ""],
   ["format", "Format", "format", (b) => `<span class="pill in">${esc(b.format)}</span>`, ""],
   ["size", "Size", "size", (b) => fmtBytes(b.size), "c-num"],
   ["added_at", "Added", "added", (b) => new Date(b.added_at).toLocaleDateString(), ""],
-  ["filename", "File name", null, (b) => esc(b.filename), "c-mono"],
-  ["description", "Description", null, (b) => (b.description ? `<span class="c-desc" title="${esc(b.description)}">${esc(b.description)}</span>` : `<span class="muted">-</span>`), "c-desc-cell"],
+  ["filename", "File name", "filename", (b) => esc(b.filename), "c-mono"],
+  ["description", "Description", "description", (b) => (b.description ? `<span class="c-desc" title="${esc(b.description)}">${esc(b.description)}</span>` : `<span class="muted">-</span>`), "c-desc-cell"],
 ];
-const bookRow = (b) => {
+const SORT_OPTS = [["added", "Date added"], ...COLS.filter((c) => c[2] && c[2] !== "added").map((c) => [c[2], c[1] === "#" ? "Series #" : c[1]])];
+const bookRow = (b, sel) => {
   const tr = document.createElement("tr");
   tr.tabIndex = 0; tr.dataset.id = b.id;
-  tr.innerHTML = `<td class="c-cover"><div class="thumb">${coverHTML(b)}</div></td>` + COLS.map(([, , , cell, cls]) => `<td class="${cls}">${cell(b)}</td>`).join("");
+  tr.classList.toggle("sel", sel.has(b.id));
+  tr.innerHTML = `<td class="c-sel"><input type="checkbox" aria-label="Select ${esc(b.title)}"${sel.has(b.id) ? " checked" : ""}></td><td class="c-cover"><div class="thumb">${coverHTML(b)}</div></td>`
+    + COLS.map(([, , , cell, cls]) => `<td class="${cls}">${cell(b)}</td>`).join("");
+  const box = tr.querySelector(".c-sel input");
+  tr.querySelector(".c-sel").onclick = (e) => { e.stopPropagation(); if (e.target !== box) box.click(); };   // the whole cell is the click target
+  box.onclick = (e) => { e.stopPropagation(); sel.toggle(b.id, box.checked, e.shiftKey); };
   const open = () => emit("open-book", b);
   tr.onclick = open;
-  tr.onkeydown = (e) => { if (e.key === "Enter") open(); };
+  tr.onkeydown = (e) => { if (e.key === "Enter" && e.target === tr) open(); };
   return tr;
 };
 
@@ -146,7 +152,7 @@ const VIEWS = {
         ${facets.formats.map((f) => `<button class="chip ${state.format === f.name ? "on" : ""}" data-f="${esc(f.name)}">${esc(f.name)} <small>${f.count}</small></button>`).join("")}
         <span class="grow"></span>
         <select class="in" id="cat" aria-label="Category"><option value="">All categories</option>${facets.categories.map((c) => `<option ${state.category === c.name ? "selected" : ""} value="${esc(c.name)}">${esc(c.name)} (${c.count})</option>`).join("")}</select>
-        <select class="in" id="sort" aria-label="Sort">${[["added", "Date added"], ["title", "Title"], ["author", "Author"], ["published", "Published"], ["size", "Size"], ["rating", "Rating"], ["series", "Series"]].map(([v, l]) => `<option value="${v}" ${state.sort === v ? "selected" : ""}>${l}</option>`).join("")}</select>
+        <select class="in" id="sort" aria-label="Sort">${SORT_OPTS.map(([v, l]) => `<option value="${v}" ${state.sort === v ? "selected" : ""}>${l}</option>`).join("")}</select>
         <button class="btn sm" id="order" title="Toggle sort order">${state.order === "asc" ? "↑ Asc" : "↓ Desc"}</button>
         <div class="seg" role="group" aria-label="View">
           <button class="btn sm ${list ? "" : "on"}" data-view="grid" aria-pressed="${!list}" title="Card view">${icon("grid")}</button>
@@ -154,7 +160,7 @@ const VIEWS = {
         </div>
       </div>
       <div class="toolbar" id="active"></div>` + (list
-      ? `<div class="tablewrap" id="grid"><table class="books"><thead><tr><th class="c-cover"></th>${COLS.map(([k, h, sk]) => sk
+      ? `<div class="tablewrap" id="grid"><table class="books"><thead><tr><th class="c-sel"><input type="checkbox" id="sel-all" aria-label="Select all loaded rows" title="Select all loaded rows"></th><th class="c-cover"></th>${COLS.map(([k, h, sk]) => sk
           ? `<th data-sort="${sk}" class="sortable ${state.sort === sk ? "sorted" : ""}" aria-sort="${state.sort === sk ? (state.order === "asc" ? "ascending" : "descending") : "none"}" title="Sort by ${h}">${h}${state.sort === sk ? (state.order === "asc" ? " ↑" : " ↓") : ""}</th>`
           : `<th>${h}</th>`).join("")}</tr></thead><tbody></tbody></table><div class="sentinel" id="more"></div></div>`
       : `<div class="grid" id="grid"></div><div class="sentinel" id="more"></div>`);
@@ -174,7 +180,7 @@ const VIEWS = {
     if (!recent) root.querySelector("#order").onclick = () => set({ order: state.order === "asc" ? "desc" : "asc" });
 
     const grid = root.querySelector("#grid"), more = root.querySelector("#more"), count = root.querySelector("#count");
-    let offset = 0, total = Infinity, loading = false;
+    let offset = 0, total = Infinity, loading = false, selApi = null;
     const load = async () => {
       if (loading || offset >= total) return;
       loading = true;
@@ -184,7 +190,8 @@ const VIEWS = {
       const page = await api("/books?" + p);
       if (!alive()) return;
       total = page.total; offset += page.items.length;
-      (list ? grid.querySelector("tbody") : grid).append(...page.items.map(list ? bookRow : card));
+      (list ? grid.querySelector("tbody") : grid).append(...page.items.map(list ? (b) => bookRow(b, selApi) : card));
+      selApi?.paint();
       count.textContent = group ? `${total} item${total === 1 ? "" : "s"} · series grouped` : `${total} book${total === 1 ? "" : "s"}`;
       if (!total) {
         const filtered = state.q || state.author || state.category || state.format || state.tag || state.series;
@@ -194,11 +201,55 @@ const VIEWS = {
       }
       loading = false;
     };
-    if (list) {   // keep table rows in step with edits made in the book panel
+    if (list) {
+      // ---- row selection + bulk edit bar
+      const sel = new Set(); let lastId = null;
+      const bar = document.createElement("div"); bar.className = "bulkbar glass"; bar.hidden = true; root.append(bar);
+      const rows = () => [...grid.querySelectorAll("tbody tr")];
+      const paint = () => {
+        const loaded = rows(), n = sel.size, all = grid.querySelector("#sel-all");
+        for (const tr of loaded) { const on = sel.has(tr.dataset.id); tr.classList.toggle("sel", on); tr.querySelector(".c-sel input").checked = on; }
+        all.checked = loaded.length > 0 && loaded.every((tr) => sel.has(tr.dataset.id));
+        all.indeterminate = !all.checked && loaded.some((tr) => sel.has(tr.dataset.id));
+        bar.hidden = !n;
+        bar.innerHTML = `<b>${n} selected</b>${n < total ? `<button class="btn sm" id="bb-all">Select all ${total}</button>` : ""}
+          <button class="btn sm primary" id="bb-edit">${icon("settings")}Edit fields…</button><button class="btn sm" id="bb-clear">Clear</button>`;
+        bar.querySelector("#bb-clear").onclick = () => { sel.clear(); paint(); };
+        bar.querySelector("#bb-edit").onclick = () => document.getElementById("bulkedit").open({
+          ids: [...sel],
+          applied: (res) => { res.books.forEach((b) => emit("book-updated", b)); sel.clear(); paint(); },
+        });
+        const allBtn = bar.querySelector("#bb-all");
+        if (allBtn) allBtn.onclick = async () => {   // every book matching the current filters, not just the loaded rows
+          allBtn.disabled = true; allBtn.textContent = "Selecting…";
+          const p = new URLSearchParams({ limit: 500, sort: state.sort, order: state.order });
+          for (const k of ["q", "author", "category", "format", "tag", "series"]) if (state[k]) p.set(k, state[k]);
+          try {
+            for (let off = 0; ; off += 500) {
+              p.set("offset", off);
+              const pageOfBooks = await api("/books?" + p);
+              pageOfBooks.items.forEach((b) => sel.add(b.id));
+              if (off + 500 >= pageOfBooks.total) break;
+            }
+          } catch {}
+          paint();
+        };
+      };
+      selApi = {
+        has: (id) => sel.has(id), paint,
+        toggle(id, on, shift) {   // shift-click selects the range since the last click
+          const ids = rows().map((tr) => tr.dataset.id), a = ids.indexOf(lastId), z = ids.indexOf(id);
+          const targets = shift && a >= 0 ? ids.slice(Math.min(a, z), Math.max(a, z) + 1) : [id];
+          for (const t of targets) on ? sel.add(t) : sel.delete(t);
+          lastId = id; paint();
+        },
+      };
+      grid.querySelector("#sel-all").onchange = (e) => { for (const tr of rows()) e.target.checked ? sel.add(tr.dataset.id) : sel.delete(tr.dataset.id); paint(); };
+      // keep table rows in step with edits made in the book panel or the bulk dialog
       const onUpdate = (e) => {
         if (!alive()) return document.removeEventListener("book-updated", onUpdate);
         const old = grid.querySelector(`tr[data-id="${e.detail.id}"]`);
-        if (old) old.replaceWith(bookRow(e.detail));
+        if (old) old.replaceWith(bookRow(e.detail, selApi));
       };
       document.addEventListener("book-updated", onUpdate);
     }
