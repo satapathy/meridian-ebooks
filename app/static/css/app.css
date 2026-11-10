@@ -348,3 +348,5 @@ mx-card:hover .stack i:nth-child(2) { transform: translate(8px, -6px) rotate(2.5
 .set-h { font-size: 0.8125rem; text-transform: uppercase; letter-spacing: .12em; color: var(--muted); margin: 22px 0 8px; font-weight: 600; }
 .preview { margin-top: 10px; padding: 12px 14px; border-radius: 12px; border: 1px solid var(--line); background: var(--glass); }
 .preview b { display: block; font-size: 1.1875rem; font-weight: 600; }
+
+.subtitle { color: var(--muted); font-size: 0.9375rem; line-height: 1.3; margin: 2px 0 4px; }

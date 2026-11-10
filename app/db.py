@@ -7,6 +7,7 @@ SCHEMA = """
 CREATE TABLE IF NOT EXISTS books (
     id           TEXT PRIMARY KEY,           -- uuid4 hex, 32 chars
     title        TEXT NOT NULL,
+    subtitle     TEXT NOT NULL DEFAULT '',
     author       TEXT NOT NULL DEFAULT '',   -- "A; B"
     publisher    TEXT NOT NULL DEFAULT '',
     description  TEXT NOT NULL DEFAULT '',
@@ -63,5 +64,6 @@ def init_db() -> None:
     with db() as conn:
         conn.executescript(SCHEMA)
         cols = {r["name"] for r in conn.execute("PRAGMA table_info(books)")}
-        if "subcategory" not in cols:  # databases created before sub-categories existed
-            conn.execute("ALTER TABLE books ADD COLUMN subcategory TEXT NOT NULL DEFAULT ''")
+        for col in ("subcategory", "subtitle"):  # columns added after the first release
+            if col not in cols:
+                conn.execute(f"ALTER TABLE books ADD COLUMN {col} TEXT NOT NULL DEFAULT ''")

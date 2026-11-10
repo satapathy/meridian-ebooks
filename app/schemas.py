@@ -12,6 +12,7 @@ class StorageInfo(BaseModel):
 class Book(BaseModel):
     id: str = Field(description="Server-assigned UUID (32 hex chars)")
     title: str
+    subtitle: str = Field(description="Optional subtitle shown under the title")
     author: str = Field(description="Authors joined with '; '")
     authors: list[str]
     publisher: str
@@ -49,6 +50,7 @@ class BookPage(BaseModel):
 class BookUpdate(BaseModel):
     """Only the fields you send are changed."""
     title: Optional[str] = None
+    subtitle: Optional[str] = None
     author: Optional[Union[str, list[str]]] = Field(None, description="'A; B' or ['A','B']")
     publisher: Optional[str] = None
     description: Optional[str] = None

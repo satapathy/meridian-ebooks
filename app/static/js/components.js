@@ -64,6 +64,7 @@ class MxDrawer extends HTMLElement {
           <div>
             <div class="eyebrow">${esc(b.category || "Uncategorized")}${b.subcategory ? " › " + esc(b.subcategory) : ""}</div>
             <h2>${esc(b.title)}</h2>
+            ${b.subtitle ? `<div class="subtitle">${esc(b.subtitle)}</div>` : ""}
             <div class="muted">${b.authors.length ? b.authors.map((a) => `<a href="#/library?author=${encodeURIComponent(a)}&sort=title&order=asc" data-nav>${esc(a)}</a>`).join(", ") : "Unknown author"}</div>
             ${b.series ? `<div class="small muted">${esc(b.series)}${b.series_index != null ? " · #" + b.series_index : ""}</div>` : ""}
             <div style="margin-top:10px;display:flex;gap:6px;flex-wrap:wrap">${b.tags.map((t) => `<a class="tag" href="#/library?tag=${encodeURIComponent(t)}" data-nav>${esc(t)}</a>`).join("")}</div>
@@ -81,6 +82,7 @@ class MxDrawer extends HTMLElement {
           <h3>Metadata</h3>
           <form class="form" id="mform" autocomplete="off">
             <label class="field full"><span>Title</span><input class="in" name="title" required value="${esc(b.title)}"></label>
+            <label class="field full"><span>Subtitle</span><input class="in" name="subtitle" value="${esc(b.subtitle)}"></label>
             <label class="field full"><span>Author(s) — separate with ;</span><input class="in" name="author" value="${esc(b.author)}"></label>
             <label class="field"><span>Series</span><input class="in" name="series" value="${esc(b.series)}"></label>
             <label class="field"><span>Series #</span><input class="in" name="series_index" type="number" step="any" value="${b.series_index ?? ""}"></label>

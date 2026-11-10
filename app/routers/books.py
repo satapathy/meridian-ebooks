@@ -16,7 +16,7 @@ def list_books(
         None,
         description=(
             "Metadata search. Terms are AND-ed; `*` matches any run of characters, `?` one character. "
-            "Scope a term with `author:`, `title:`, `publisher:`, `tag:`, `category:`, `subcategory:` (`sub:`), `format:`, `series:`, "
+            "Scope a term with `author:`, `title:`, `subtitle:`, `publisher:`, `tag:`, `category:`, `subcategory:` (`sub:`), `format:`, `series:`, "
             "`isbn:`, `lang:`, `year:`, `file:`. Quote phrases, prefix `-` to exclude. "
             "Example: `author:tolk* title:\"*ring*\" -audio`"
         ),

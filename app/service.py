@@ -186,7 +186,7 @@ def ingest(tmp_path: Path, original_name: str, *, source_path: str | None = None
             embedded = sorted(f for f in md.EMBEDDABLE.get(ext, set()) if _nonempty(meta.get(f)))
             ts = now()
             row = {
-                "id": book_id, "title": title, "author": meta.get("author", ""),
+                "id": book_id, "title": title, "subtitle": "", "author": meta.get("author", ""),
                 "publisher": meta.get("publisher", ""), "description": meta.get("description", ""),
                 "language": meta.get("language", ""), "published": meta.get("published", ""),
                 "isbn": meta.get("isbn", ""), "tags": json.dumps(tags, ensure_ascii=False),

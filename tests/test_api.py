@@ -291,3 +291,22 @@ def test_group_series(client):
     assert [b["title"] for b in inside["items"]] == ["Dune", "Dune Messiah", "Children of Dune"]
     paged = client.get("/api/books", params={"group_series": "true", "limit": 1, "offset": 1, "sort": "title", "order": "asc"}).json()
     assert paged["total"] == 2 and len(paged["items"]) == 1
+
+
+def test_subtitle_edit_search_and_migration(client):
+    import sqlite3
+    from app.db import init_db
+    bid = upload(client, "a.epub", make_epub(title="Dune", marker="st"))["book_id"]
+    assert client.get(f"/api/books/{bid}").json()["subtitle"] == ""
+    b = client.patch(f"/api/books/{bid}", json={"subtitle": "The Desert Planet"}).json()
+    assert b["subtitle"] == "The Desert Planet" and "subtitle" in b["storage"]["sidecar"]
+    assert client.get("/api/books", params={"q": "subtitle:desert*"}).json()["total"] == 1
+    assert client.get("/api/books", params={"q": "planet"}).json()["total"] == 1  # free text covers it too
+    assert client.get("/api/books", params={"q": "title:desert"}).json()["total"] == 0
+    con = sqlite3.connect(settings.db_path)
+    con.execute("ALTER TABLE books DROP COLUMN subtitle")
+    con.commit(); con.close()
+    init_db()
+    con = sqlite3.connect(settings.db_path)
+    assert "subtitle" in {r[1] for r in con.execute("PRAGMA table_info(books)")}
+    con.close()

@@ -10,11 +10,11 @@ Syntax (all terms are AND-ed, case-insensitive, "contains" semantics):
 import re
 
 ANY_FIELDS = [
-    "title", "author", "publisher", "description", "tags", "category", "subcategory",
+    "title", "subtitle", "author", "publisher", "description", "tags", "category", "subcategory",
     "series", "isbn", "filename", "format", "language", "published",
 ]
 FIELD_ALIASES = {
-    "title": ["title"], "author": ["author"], "by": ["author"],
+    "title": ["title"], "subtitle": ["subtitle"], "author": ["author"], "by": ["author"],
     "publisher": ["publisher"], "description": ["description"], "desc": ["description"],
     "tag": ["tags"], "tags": ["tags"], "category": ["category"], "cat": ["category"],
     "subcategory": ["subcategory"], "sub": ["subcategory"],

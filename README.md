@@ -38,6 +38,10 @@ docker compose up --build
 * Swagger: <http://localhost:8000/docs> (ReDoc at `/redoc`)
 * Data lives in the data folder (`./data` by default: library files + `meridian.db`). Optional `./import` is mounted read-only at `/import` for server-side imports.
 
+### Raspberry Pi
+
+A 64-bit OS (`uname -m` prints `aarch64`) is recommended. On 32-bit Raspberry Pi OS (`armv7l`) PyMuPDF has no prebuilt package, so the image builds without it: everything works, but PDFs get no embedded metadata, no first-page cover (a generated cover is shown) and metadata edits for PDFs go to the `-info.json` sidecar.
+
 ## Features
 
 | Requirement | How it works |

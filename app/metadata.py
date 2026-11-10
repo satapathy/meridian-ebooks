@@ -17,7 +17,7 @@ from lxml import etree
 log = logging.getLogger("meridian.metadata")
 
 FIELDS = [
-    "title", "author", "publisher", "description", "language", "published",
+    "title", "subtitle", "author", "publisher", "description", "language", "published",
     "isbn", "tags", "category", "subcategory", "series", "series_index", "rating",
 ]
 
@@ -169,7 +169,10 @@ def _write_epub(path: Path, meta: dict) -> set[str]:
 
 # --------------------------------------------------------------------------- PDF
 def _read_pdf(path: Path) -> tuple[dict, bytes | None]:
-    import pymupdf
+    try:
+        import pymupdf
+    except ImportError:  # not installable on 32-bit ARM: PDFs are stored but not inspected
+        return {}, None
 
     doc = pymupdf.open(path)
     try:
@@ -195,7 +198,10 @@ def _read_pdf(path: Path) -> tuple[dict, bytes | None]:
 
 
 def _write_pdf(path: Path, meta: dict) -> set[str]:
-    import pymupdf
+    try:
+        import pymupdf
+    except ImportError:  # nothing embedded; the caller keeps all fields in the sidecar JSON
+        return set()
 
     tmp = path.with_name(path.name + ".tmp")
     doc = pymupdf.open(path)
