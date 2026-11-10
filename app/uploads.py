@@ -34,10 +34,19 @@ def category_from_path(rel_path: str) -> str | None:
     return parts[-2] if len(parts) >= 2 else None
 
 
+def is_junk(path: str) -> bool:
+    """macOS resource-fork leftovers (`__MACOSX/` folders, `._name` files) that zips and copies contain."""
+    parts = [p for p in path.replace("\\", "/").split("/") if p]
+    return any(p == "__MACOSX" or p.startswith("._") for p in parts)
+
+
 def ingest_one(tmp: Path, name: str, rel_path: str | None, category: str | None, overwrite: bool = False) -> dict:
     """Ingest one temp file (a book, or a metadata JSON), turning any failure into an error result."""
     label = rel_path or name
     try:
+        if is_junk(label) or is_junk(name):
+            tmp.unlink(missing_ok=True)
+            return {"filename": label, "status": "skipped", "detail": "macOS metadata file"}
         if is_json(name):
             raw = tmp.read_bytes()[: MAX_JSON_BYTES + 1]
             tmp.unlink(missing_ok=True)
@@ -60,6 +69,9 @@ def expand_zip(zip_tmp: Path, zip_name: str, rel_path: str | None, use_folders: 
     """Ingest everything useful inside an uploaded .zip: books first, then metadata JSONs."""
     results: list[dict] = []
     base = rel_path or zip_name
+    if is_junk(base) or is_junk(zip_name):
+        zip_tmp.unlink(missing_ok=True)
+        return [{"filename": base, "status": "skipped", "detail": "macOS metadata file"}]
     try:
         with zipfile.ZipFile(zip_tmp) as z:
             members = [i for i in z.infolist() if not i.is_dir()]

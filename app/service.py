@@ -186,7 +186,7 @@ def ingest(tmp_path: Path, original_name: str, *, source_path: str | None = None
             embedded = sorted(f for f in md.EMBEDDABLE.get(ext, set()) if _nonempty(meta.get(f)))
             ts = now()
             row = {
-                "id": book_id, "title": title, "subtitle": "", "author": meta.get("author", ""),
+                "id": book_id, "title": title, "subtitle": "", "author": "; ".join(split_authors(meta.get("author", ""))),
                 "publisher": meta.get("publisher", ""), "description": meta.get("description", ""),
                 "language": meta.get("language", ""), "published": meta.get("published", ""),
                 "isbn": meta.get("isbn", ""), "tags": json.dumps(tags, ensure_ascii=False),
@@ -215,25 +215,30 @@ def ingest(tmp_path: Path, original_name: str, *, source_path: str | None = None
 
 
 # --------------------------------------------------------------------------- edit
+def _text(v) -> str:
+    """Scalar JSON values (numbers, booleans) as text; None -> ''."""
+    return "" if v is None else str(v).strip()
+
+
 def _normalise_patch(patch: dict) -> dict:
     out: dict = {}
     for k, v in patch.items():
         if k == "author":
             if isinstance(v, list):
-                v = "; ".join(a.strip() for a in v if a and a.strip())
-            out[k] = (v or "").strip()
+                v = "; ".join(_text(a) for a in v)
+            out[k] = "; ".join(split_authors(_text(v)))  # canonical "A; B" separator
         elif k == "tags":
             if isinstance(v, str):
                 v = [t for t in v.replace(";", ",").split(",")]
             seen, tags = set(), []
             for t in v or []:
-                t = t.strip()
+                t = _text(t)
                 if t and t.lower() not in seen:
                     seen.add(t.lower())
                     tags.append(t)
             out[k] = json.dumps(tags, ensure_ascii=False)
         elif k == "title":
-            v = (v or "").strip()
+            v = _text(v)
             if not v:
                 raise BadRequest("Title cannot be empty")
             out[k] = v
@@ -244,7 +249,7 @@ def _normalise_patch(patch: dict) -> dict:
         elif k == "series_index":
             out[k] = float(v) if v is not None else None
         elif k in md.FIELDS:
-            out[k] = (v or "").strip()
+            out[k] = _text(v)
     return out
 
 
@@ -344,7 +349,8 @@ def _where(q=None, author=None, category=None, fmt=None, tag=None, series=None, 
             parts.append(sql)
             params += p
     if author:
-        parts.append("('; ' || author || '; ') LIKE ? ESCAPE '\\'")
+        # tolerate rows saved as "A;B" (no space): compare on the canonical "A; B" form, as facets() does
+        parts.append("('; ' || replace(replace(author, '; ', ';'), ';', '; ') || '; ') LIKE ? ESCAPE '\\'")
         params.append(f"%; {_escape_like(author)}; %")
     if category is not None and category != "":
         if category == "Uncategorized":
