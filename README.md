@@ -34,6 +34,23 @@ Runs in one container, including on a Raspberry Pi.
 * Restarts automatically after a reboot (see the Raspberry Pi section)
 * No built-in authentication - put it behind a reverse proxy or VPN before exposing it
 
+## Screenshots
+
+<!-- Images live in docs/screenshots/. Regenerate them with scripts/capture_screenshots.py (see Development). -->
+<!-- Or replace a file with the same name; no README edit needed. -->
+
+**Library** - the landing page: a cover wall with format filters, category and sort controls, and a search box that accepts wildcards and field scopes. Books without an embedded cover get a generated one, and a series (here *Middle-earth*) can be collapsed into one stacked tile.
+
+![Library view with a wall of book covers and a stacked series tile](docs/screenshots/library.png)
+
+**Book details** - click any book to open its panel: the cover (with an *Upload cover* button to replace it), tags, a *Download* button and the editable metadata form. Saving writes the metadata into the file for EPUB, PDF and DOCX, or into a `-info.json` sidecar for other formats.
+
+![Book detail panel with an editable metadata form](docs/screenshots/book-details.png)
+
+**Settings** - choose one of ten themes (shown here: Aurora, one of the dark ones), the font and text size, the cover border thickness, and whether series are grouped. Settings are saved per browser.
+
+![Settings panel with theme picker, font, text size and cover border controls](docs/screenshots/themes-settings.png)
+
 ## Setting up the data folder
 
 The container runs as a non-root user (UID/GID 1000 by default) and must be able to write to the data folder.
@@ -147,6 +164,14 @@ Writing metadata into a file changes its bytes, so the server tracks both the or
 pip install -r requirements.txt
 python -m pytest                      # backend test suite
 DATA_DIR=./data uvicorn app.main:app --reload
+```
+
+Regenerate the README screenshots (against an empty throwaway instance - the script adds demo books and refuses to run on a library that already has books):
+
+```bash
+DATA_DIR=./.demo-data uvicorn app.main:app --port 8000     # terminal 1
+pip install playwright                                     # once (uses an installed Edge/Chrome; or `playwright install chromium` and pass --browser chromium)
+python scripts/capture_screenshots.py                      # terminal 2 -> docs/screenshots/*.png
 ```
 
 Configuration (environment): `DATA_DIR` (default `./data`), `IMPORT_DIR` (default `./import`), `MAX_ARCHIVE_BYTES`.
