@@ -1,4 +1,4 @@
-import { api, esc, icon, toast, coverHTML, hue, fmtBytes, emit, applyPrefs, getPref } from "./api.js";
+import { api, esc, icon, toast, coverHTML, hue, fmtBytes, emit, applyPrefs, getPref, setPref } from "./api.js";
 import "./components.js";
 
 const view = document.getElementById("view");
@@ -65,7 +65,7 @@ function go(to, replace = false) {
 }
 addEventListener("hashchange", () => { $("drawer").close(); render(); });
 document.addEventListener("library-changed", () => { refreshRail(); render(); });
-document.addEventListener("prefs-changed", (e) => { if (e.detail.key === "series") render(); });
+document.addEventListener("prefs-changed", (e) => { if (e.detail.key === "series" || e.detail.key === "view") render(); });
 
 async function refreshRail() {
   try { const s = await api("/stats", { quiet: true }); $("rail-stats").textContent = `${s.books} books · ${fmtBytes(s.bytes)}`; } catch {}
@@ -88,6 +88,38 @@ async function render() {
 // ------------------------------------------------------------------ helpers
 const card = (b) => { const c = document.createElement("mx-card"); c.book = b; return c; };
 
+// Table view: one column per metadata field. [key, heading, sort key (or null), cell html, css class]
+const dash = (v) => (v ? esc(v) : `<span class="muted">-</span>`);
+const COLS = [
+  ["title", "Title", "title", (b) => `<b>${esc(b.title)}</b>`, "c-title"],
+  ["subtitle", "Subtitle", null, (b) => dash(b.subtitle), "c-wide"],
+  ["author", "Author(s)", "author", (b) => dash(b.author), "c-wide"],
+  ["series", "Series", "series", (b) => dash(b.series), ""],
+  ["series_index", "#", null, (b) => (b.series_index != null ? esc(String(b.series_index)) : `<span class="muted">-</span>`), "c-num"],
+  ["category", "Category", "category", (b) => dash(b.category), ""],
+  ["subcategory", "Sub-category", null, (b) => dash(b.subcategory), ""],
+  ["tags", "Tags", null, (b) => (b.tags.length ? b.tags.map((t) => `<span class="tag">${esc(t)}</span>`).join(" ") : `<span class="muted">-</span>`), "c-wide"],
+  ["publisher", "Publisher", null, (b) => dash(b.publisher), ""],
+  ["published", "Published", "published", (b) => dash(b.published), ""],
+  ["language", "Lang", null, (b) => dash(b.language), "c-num"],
+  ["isbn", "ISBN", null, (b) => dash(b.isbn), "c-mono"],
+  ["rating", "Rating", "rating", (b) => (b.rating ? `<span class="stars-txt">${"★".repeat(b.rating)}</span>` : `<span class="muted">-</span>`), ""],
+  ["format", "Format", "format", (b) => `<span class="pill in">${esc(b.format)}</span>`, ""],
+  ["size", "Size", "size", (b) => fmtBytes(b.size), "c-num"],
+  ["added_at", "Added", "added", (b) => new Date(b.added_at).toLocaleDateString(), ""],
+  ["filename", "File name", null, (b) => esc(b.filename), "c-mono"],
+  ["description", "Description", null, (b) => (b.description ? `<span class="c-desc" title="${esc(b.description)}">${esc(b.description)}</span>` : `<span class="muted">-</span>`), "c-desc-cell"],
+];
+const bookRow = (b) => {
+  const tr = document.createElement("tr");
+  tr.tabIndex = 0; tr.dataset.id = b.id;
+  tr.innerHTML = `<td class="c-cover"><div class="thumb">${coverHTML(b)}</div></td>` + COLS.map(([, , , cell, cls]) => `<td class="${cls}">${cell(b)}</td>`).join("");
+  const open = () => emit("open-book", b);
+  tr.onclick = open;
+  tr.onkeydown = (e) => { if (e.key === "Enter") open(); };
+  return tr;
+};
+
 const emptyState = () => `<div class="empty"><h2>Your shelves are empty</h2><p>Add some books to get started — drop files or entire folders anywhere on this page.</p>
   <button class="btn primary" onclick="document.getElementById('upload').open()">${icon("upload")}Add books</button></div>`;
 
@@ -103,7 +135,8 @@ const VIEWS = {
     const state = { q: params.get("q") || "", author: params.get("author") || "", category: params.get("category") || "",
       format: params.get("format") || "", tag: params.get("tag") || "", series: params.get("series") || "",
       sort: recent ? "added" : params.get("sort") || "title", order: recent ? "desc" : params.get("order") || "asc" };
-    const group = !recent && !state.q && !state.series && getPref("series", "on") !== "off";
+    const list = getPref("view", "grid") === "list";
+    const group = !list && !recent && !state.q && !state.series && getPref("series", "on") !== "off";   // the table shows every book and has a Series column
     const facets = await api("/facets");
     const set = (patch) => { const p = new URLSearchParams(); const s = { ...state, ...patch }; for (const [k, v] of Object.entries(s)) if (v && !(recent && (k === "sort" || k === "order"))) p.set(k, v); go((recent ? "/recent" : "/library") + (p.size ? "?" + p : ""), true); };
     const title = recent ? "Recently added" : state.q ? `Results for “${state.q}”` : state.author || state.category || (state.tag && `#${state.tag}`) || state.series || "Library";
@@ -115,8 +148,21 @@ const VIEWS = {
         <select class="in" id="cat" aria-label="Category"><option value="">All categories</option>${facets.categories.map((c) => `<option ${state.category === c.name ? "selected" : ""} value="${esc(c.name)}">${esc(c.name)} (${c.count})</option>`).join("")}</select>
         <select class="in" id="sort" aria-label="Sort">${[["added", "Date added"], ["title", "Title"], ["author", "Author"], ["published", "Published"], ["size", "Size"], ["rating", "Rating"], ["series", "Series"]].map(([v, l]) => `<option value="${v}" ${state.sort === v ? "selected" : ""}>${l}</option>`).join("")}</select>
         <button class="btn sm" id="order" title="Toggle sort order">${state.order === "asc" ? "↑ Asc" : "↓ Desc"}</button>
+        <div class="seg" role="group" aria-label="View">
+          <button class="btn sm ${list ? "" : "on"}" data-view="grid" aria-pressed="${!list}" title="Card view">${icon("grid")}</button>
+          <button class="btn sm ${list ? "on" : ""}" data-view="list" aria-pressed="${list}" title="List view (table with all metadata)">${icon("list")}</button>
+        </div>
       </div>
-      <div class="toolbar" id="active"></div><div class="grid" id="grid"></div><div class="sentinel" id="more"></div>`;
+      <div class="toolbar" id="active"></div>` + (list
+      ? `<div class="tablewrap" id="grid"><table class="books"><thead><tr><th class="c-cover"></th>${COLS.map(([k, h, sk]) => sk
+          ? `<th data-sort="${sk}" class="sortable ${state.sort === sk ? "sorted" : ""}" aria-sort="${state.sort === sk ? (state.order === "asc" ? "ascending" : "descending") : "none"}" title="Sort by ${h}">${h}${state.sort === sk ? (state.order === "asc" ? " ↑" : " ↓") : ""}</th>`
+          : `<th>${h}</th>`).join("")}</tr></thead><tbody></tbody></table><div class="sentinel" id="more"></div></div>`
+      : `<div class="grid" id="grid"></div><div class="sentinel" id="more"></div>`);
+    root.querySelectorAll("[data-view]").forEach((b) => (b.onclick = () => { if (b.dataset.view !== (list ? "list" : "grid")) setPref("view", b.dataset.view); }));
+    root.querySelectorAll("th[data-sort]").forEach((th) => (th.onclick = () => {
+      const k = th.dataset.sort;
+      set({ sort: k, order: state.sort === k ? (state.order === "asc" ? "desc" : "asc") : ["added", "size", "rating", "published"].includes(k) ? "desc" : "asc" });
+    }));
     if (recent) root.querySelectorAll("#sort, #order").forEach((e) => e.remove());
     const active = root.querySelector("#active");
     for (const k of ["author", "tag", "series"]) if (state[k]) active.insertAdjacentHTML("beforeend", `<button class="chip on" data-clear="${k}">${k}: ${esc(state[k])} ✕</button>`);
@@ -138,7 +184,7 @@ const VIEWS = {
       const page = await api("/books?" + p);
       if (!alive()) return;
       total = page.total; offset += page.items.length;
-      grid.append(...page.items.map(card));
+      (list ? grid.querySelector("tbody") : grid).append(...page.items.map(list ? bookRow : card));
       count.textContent = group ? `${total} item${total === 1 ? "" : "s"} · series grouped` : `${total} book${total === 1 ? "" : "s"}`;
       if (!total) {
         const filtered = state.q || state.author || state.category || state.format || state.tag || state.series;
@@ -148,6 +194,14 @@ const VIEWS = {
       }
       loading = false;
     };
+    if (list) {   // keep table rows in step with edits made in the book panel
+      const onUpdate = (e) => {
+        if (!alive()) return document.removeEventListener("book-updated", onUpdate);
+        const old = grid.querySelector(`tr[data-id="${e.detail.id}"]`);
+        if (old) old.replaceWith(bookRow(e.detail));
+      };
+      document.addEventListener("book-updated", onUpdate);
+    }
     new IntersectionObserver((en) => en[0].isIntersecting && load(), { rootMargin: "500px" }).observe(more);
     await load();
   },

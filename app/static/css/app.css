@@ -396,3 +396,29 @@ mx-card:hover .stack i:nth-child(2) { transform: translate(8px, -6px) rotate(2.5
 .fm-opt:has(input:checked) { border-color: var(--a1); background: color-mix(in srgb, var(--a1) 14%, transparent); }
 .fm-val { display: block; white-space: pre-wrap; overflow-wrap: anywhere; max-height: 8.5em; overflow: auto; }
 @media (max-width: 640px) { .fm-grid { grid-template-columns: 1fr 1fr; } .fm-h:first-child { display: none; } .fm-f { grid-column: 1 / -1; padding-top: 6px; } }
+
+/* ---- List view (table with every metadata column) ---- */
+.seg { display: inline-flex; gap: 0; }
+.seg .btn { border-radius: 0; padding-inline: 10px; }
+.seg .btn:first-child { border-radius: 10px 0 0 10px; } .seg .btn:last-child { border-radius: 0 10px 10px 0; margin-left: -1px; }
+.seg .btn.on { background: color-mix(in srgb, var(--a1) 22%, transparent); border-color: var(--a1); color: var(--text); }
+.seg .btn svg { width: 16px; height: 16px; }
+.tablewrap { overflow: auto; max-height: calc(100vh - 230px); border: 1px solid var(--line); border-radius: 14px; background: var(--glass); }
+table.books { border-collapse: separate; border-spacing: 0; width: max-content; min-width: 100%; font-size: .8125rem; }
+table.books th { position: sticky; top: 0; z-index: 2; text-align: left; white-space: nowrap; padding: 10px 12px; font-size: .72rem; font-weight: 600; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); background: color-mix(in srgb, var(--bg2) 94%, transparent); backdrop-filter: blur(10px); border-bottom: 1px solid var(--line); }
+table.books th.sortable { cursor: pointer; user-select: none; }
+table.books th.sortable:hover, table.books th.sorted { color: var(--text); }
+table.books td { padding: 8px 12px; border-bottom: 1px solid var(--line); vertical-align: middle; max-width: 280px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+table.books tbody tr { cursor: pointer; outline: 0; transition: background .12s; }
+table.books tbody tr:hover, table.books tbody tr:focus-visible { background: color-mix(in srgb, var(--a1) 10%, transparent); }
+table.books tbody tr:focus-visible { box-shadow: inset 3px 0 0 var(--a1); }
+table.books td.c-cover, table.books th.c-cover { width: 52px; padding-right: 4px; }
+table.books .thumb { width: 36px; aspect-ratio: 2/3; border-radius: 4px; overflow: hidden; box-shadow: var(--shadow); }
+table.books td.c-title { min-width: 200px; max-width: 320px; }
+table.books td.c-wide { min-width: 150px; }
+table.books td.c-num { text-align: right; font-variant-numeric: tabular-nums; }
+table.books td.c-mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: .75rem; }
+table.books td.c-desc-cell { min-width: 260px; max-width: 360px; }
+table.books .c-desc { display: block; overflow: hidden; text-overflow: ellipsis; }
+table.books .tag { padding: 1px 8px; font-size: .7rem; cursor: inherit; }
+.stars-txt { color: #ffd166; letter-spacing: 1px; }
