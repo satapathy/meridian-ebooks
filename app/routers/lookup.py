@@ -1,3 +1,4 @@
+import re
 from typing import Literal, Optional
 
 from fastapi import APIRouter, HTTPException, Query
@@ -122,6 +123,54 @@ def suggest(body: SuggestRequest):
             unavailable = str(exc)
             results.append({**row, "reason": f"Not looked up ({exc})"})
     return {"results": results, "unavailable": unavailable}
+
+
+class CoverOption(BaseModel):
+    key: str = Field(..., description="Fetch the image from `GET /lookup/cover-img/{key}`")
+    source: str
+    matched: str = ""
+    confidence: str = ""
+    width: int
+    height: int
+
+
+class FetchedMetadata(BaseModel):
+    fields: dict = Field(..., description="Only the fields the public sites know: title, subtitle, author, category, subcategory, "
+                                          "tags (list), publisher, published, language, isbn, description")
+    source: str = Field("", description="Which sites matched this book")
+    matched: str = ""
+    confidence: str = Field("", description="'isbn' (exact) or 'title' (title + author match)")
+    covers: list[CoverOption]
+
+
+@router.get(
+    "/metadata/{book_id}", response_model=FetchedMetadata, summary="Everything the public sites know about one book",
+    description=("Looks the book up on Google Books and Open Library (by ISBN, else title + author) and returns the "
+                 "metadata it found plus up to 6 candidate covers. **Nothing is saved**: compare with the book's current "
+                 "values, then apply what you want with `PATCH /books/{id}` and `PUT /books/{id}/cover`."),
+)
+def fetch_metadata(book_id: str):
+    _require_enabled()
+    try:
+        book = service.get_book(book_id)
+    except service.BookNotFound:
+        raise HTTPException(404, "Book not found")
+    try:
+        return lookup.fetch_metadata(book, lookup.existing_categories())
+    except lookup.LookupUnavailable as exc:
+        raise HTTPException(503, f"Could not reach Google Books / Open Library ({exc})")
+
+
+@router.get(
+    "/cover-img/{key}", summary="A candidate cover from `GET /lookup/metadata/{id}`",
+    responses={200: {"content": {"image/jpeg": {}}}, 404: {"description": "Unknown or expired - fetch the metadata again"}},
+)
+def cover_image(key: str):
+    _require_enabled()
+    jpeg = lookup.cover_by_key(key) if re.fullmatch(r"[0-9a-f]{32}", key) else None
+    if not jpeg:
+        raise HTTPException(404, "Cover not found or expired")
+    return Response(jpeg, media_type="image/jpeg", headers={"Cache-Control": "private, max-age=600"})
 
 
 @router.get(

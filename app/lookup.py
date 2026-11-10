@@ -7,6 +7,8 @@ Sources (no API key needed):
 Nothing is ever saved here: callers get *suggestions* for fields that are currently empty, and the user
 accepts them (through the normal PATCH endpoint). A lookup sends only a book's title, author and ISBN.
 """
+import hashlib
+import html
 import json
 import logging
 import re
@@ -295,6 +297,183 @@ def get_cover(book: dict) -> dict | None:
     if unreachable == len(finders):
         raise LookupUnavailable("service not reachable")
     return None
+
+
+# --------------------------------------------------------------------------- everything at once ("Fetch metadata")
+MAX_COVERS_PER_SOURCE = 3        # the dialog offers up to 6 covers: 3 from Google Books, 3 from Open Library
+_by_key: "dict[str, bytes]" = {}   # md5 of a cover JPEG -> JPEG, so the browser can preview and then keep a chosen one
+MAX_KEYED = 60
+
+
+def _remember(jpeg: bytes) -> str:
+    key = hashlib.md5(jpeg).hexdigest()
+    with _lock:
+        _by_key.pop(key, None)
+        if len(_by_key) >= MAX_KEYED:
+            _by_key.pop(next(iter(_by_key)))
+        _by_key[key] = jpeg
+    return key
+
+
+def cover_by_key(key: str) -> bytes | None:
+    return _by_key.get(key)
+
+
+def _plain(text: str) -> str:
+    """Google descriptions sometimes contain <p>/<br>/<b>; keep paragraphs, drop the markup."""
+    text = re.sub(r"(?i)<br\s*/?>|</p>", "\n", text or "")
+    text = html.unescape(re.sub(r"<[^>]+>", "", text))
+    return "\n".join(re.sub(r"[ \t]+", " ", ln).strip() for ln in text.splitlines()).strip()
+
+
+_LANG3 = {"eng": "en", "fre": "fr", "fra": "fr", "ger": "de", "deu": "de", "spa": "es", "ita": "it", "por": "pt", "rus": "ru",
+          "jpn": "ja", "chi": "zh", "zho": "zh", "dut": "nl", "nld": "nl", "swe": "sv", "pol": "pl", "lat": "la", "gre": "el",
+          "ell": "el", "heb": "he", "ara": "ar", "hin": "hi", "kor": "ko", "tur": "tr", "nor": "no", "dan": "da", "fin": "fi",
+          "cze": "cs", "ces": "cs", "hun": "hu"}
+
+
+def _google_isbn(ids: list) -> str:
+    """ISBN-13 if listed, else ISBN-10 (Google's industryIdentifiers)."""
+    by = {i.get("type"): clean_isbn(i.get("identifier", "")) for i in ids if isinstance(i, dict)}
+    return by.get("ISBN_13") or by.get("ISBN_10") or ""
+
+
+def _ol_isbn(isbns: list) -> str:
+    cleaned = [clean_isbn(str(i)) for i in isbns or []]
+    return next((i for i in cleaned if len(i) == 13), "") or next((i for i in cleaned if i), "")
+
+
+def _google_matches(book: dict) -> list[dict]:
+    """Every Google Books record that is the same book (all editions found), richest fields included."""
+    isbn = clean_isbn(book.get("isbn", ""))
+    authors = split_authors(book.get("author", ""))
+    if isbn:
+        q, trusted = f"isbn:{isbn}", True
+    else:
+        title = _main_title(book.get("title", ""))
+        if not title:
+            return []
+        q = f'intitle:"{title}"' + (f' inauthor:"{authors[0]}"' if authors else "")
+        trusted = False
+    url = GOOGLE_URL + "?" + urllib.parse.urlencode(
+        {"q": q, "maxResults": 6, "printType": "books",
+         "fields": "items(volumeInfo(title,subtitle,authors,publisher,publishedDate,language,description,categories,"
+                   "imageLinks,industryIdentifiers))"})
+    out = []
+    for item in _http_json(url).get("items") or []:
+        info = item.get("volumeInfo") or {}
+        if not trusted and not (title_matches(book.get("title", ""), info.get("title", ""))
+                                and authors_match(authors, info.get("authors") or [])):
+            continue
+        category, sub = split_google_category((info.get("categories") or [""])[0])
+        cover, cover_alt = _google_image(info.get("imageLinks") or {})
+        out.append({"category": category, "subcategory": sub, "cover_url": cover, "cover_url_alt": cover_alt,
+                    "title": (info.get("title") or "").strip(), "author": "; ".join(a.strip() for a in info.get("authors") or [] if a.strip()),
+                    "isbn": _google_isbn(info.get("industryIdentifiers") or []),
+                    "subtitle":(info.get("subtitle") or "").strip(), "publisher": (info.get("publisher") or "").strip(),
+                    "published": (info.get("publishedDate") or "").strip(), "language": (info.get("language") or "").strip(),
+                    "description": _plain(info.get("description") or ""),
+                    "matched": info.get("title", ""), "confidence": "isbn" if trusted else "title"})
+    return out
+
+
+def _openlib_matches(book: dict) -> list[dict]:
+    isbn = clean_isbn(book.get("isbn", ""))
+    authors = split_authors(book.get("author", ""))
+    params = {"limit": 6, "fields": "title,author_name,subject,cover_i,first_publish_year,publisher,language,isbn"}
+    if isbn:
+        params["isbn"], trusted = isbn, True
+    else:
+        title = _main_title(book.get("title", ""))
+        if not title:
+            return []
+        params["title"], trusted = title, False
+        if authors:
+            params["author"] = authors[0]
+    out = []
+    for doc in _http_json(OPENLIB_URL + "?" + urllib.parse.urlencode(params)).get("docs") or []:
+        if not trusted and not (title_matches(book.get("title", ""), doc.get("title", ""))
+                                and authors_match(authors, doc.get("author_name") or [])):
+            continue
+        cover_id = doc.get("cover_i")
+        cover = f"https://covers.openlibrary.org/b/id/{int(cover_id)}-L.jpg" if isinstance(cover_id, int) and cover_id > 0 else ""
+        year = doc.get("first_publish_year")
+        langs = [_LANG3.get(str(c).lower()) for c in doc.get("language") or []]
+        out.append({"tags": clean_subjects(doc.get("subject") or []), "cover_url": cover, "cover_url_alt": "",
+                    "title": (doc.get("title") or "").strip(), "author": "; ".join(a.strip() for a in doc.get("author_name") or [] if a.strip()),
+                    "isbn": _ol_isbn(doc.get("isbn") or []), "publisher": next((str(p).strip() for p in doc.get("publisher") or [] if str(p).strip()), ""),
+                    "published": str(year) if isinstance(year, int) and year > 0 else "", "language": next((c for c in langs if c), ""),
+                    "matched": doc.get("title", ""), "confidence": "isbn" if trusted else "title"})
+    if isbn:   # Open Library can also serve the cover for this exact ISBN ("default=false" = 404 instead of a blank image)
+        out.append({"tags": [], "cover_url": f"https://covers.openlibrary.org/b/isbn/{isbn}-L.jpg?default=false",
+                    "cover_url_alt": "", "matched": book.get("title", ""), "confidence": "isbn"})
+    return out
+
+
+def fetch_metadata(book: dict, existing_categories: dict[str, str] | None = None) -> dict:
+    """Everything the public sites know about one book, for the user to compare with the current values:
+
+    {"fields": {title, subtitle, author, category, subcategory, tags, publisher, published, language, isbn, description
+                (only those found)},
+     "source", "matched", "confidence", "covers": [{key, source, matched, confidence, width, height}, ...]}
+
+    Nothing is saved. Raises LookupUnavailable only when neither site could be reached.
+    """
+    existing_categories = existing_categories or {}
+    errors, g, o = [], [], []
+    try:
+        g = _google_matches(book)
+    except LookupUnavailable as exc:
+        errors.append(f"Google Books: {exc}")
+    try:
+        o = _openlib_matches(book)
+    except LookupUnavailable as exc:
+        errors.append(f"Open Library: {exc}")
+    if len(errors) == 2:
+        raise LookupUnavailable("; ".join(errors))
+
+    def first(items: list[dict], key: str) -> str:
+        return next((i[key] for i in items if i.get(key)), "")
+
+    fields: dict = {}
+    cat_hit = next((i for i in g if i["category"]), None)
+    if cat_hit:
+        fields["category"] = existing_categories.get(cat_hit["category"].lower(), cat_hit["category"])
+        if cat_hit["subcategory"]:
+            fields["subcategory"] = cat_hit["subcategory"]
+    for key in ("title", "subtitle", "author", "publisher", "published", "language", "isbn", "description"):
+        v = first(g, key) or first(o, key)      # Google Books first, Open Library fills the gaps
+        if v and not (key == "subtitle" and v.lower() == (book.get("title") or "").lower()):
+            fields[key] = v
+    tags = next((i["tags"] for i in o if i["tags"]), [])
+    if tags:
+        fields["tags"] = tags
+    lead = (g or o or [{}])[0]
+
+    covers, seen = [], set()
+    from io import BytesIO
+
+    from PIL import Image
+
+    for source, hits in (("Google Books", g), ("Open Library", o)):
+        taken = 0
+        for hit in hits:
+            if taken >= MAX_COVERS_PER_SOURCE:
+                break
+            for url in dict.fromkeys(u for u in (hit.get("cover_url"), hit.get("cover_url_alt")) if u):
+                jpeg = _download_cover(url)
+                if not jpeg:
+                    continue
+                key = _remember(jpeg)
+                if key not in seen:           # editions often share one image
+                    seen.add(key)
+                    w, h = Image.open(BytesIO(jpeg)).size
+                    covers.append({"key": key, "source": source, "matched": hit["matched"],
+                                   "confidence": hit["confidence"], "width": w, "height": h})
+                    taken += 1
+                break
+    return {"fields": fields, "source": " + ".join(s for s, items in (("Google Books", g), ("Open Library", o)) if items),
+            "matched": lead.get("matched", ""), "confidence": lead.get("confidence", ""), "covers": covers}
 
 
 # --------------------------------------------------------------------------- combine

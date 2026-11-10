@@ -267,8 +267,8 @@ mx-drawer.open { display: block; }
 .inline { display: flex; gap: 8px; align-items: center; } .inline .in { flex: 1; } .inline .ext { color: var(--muted); }
 
 /* ============ Dialogs ============ */
-mx-upload, mx-export, mx-settings { position: fixed; inset: 0; z-index: 70; display: none; place-items: center; padding: 20px; }
-mx-upload.open, mx-export.open, mx-settings.open { display: grid; }
+mx-upload, mx-export, mx-settings, mx-fetchmeta { position: fixed; inset: 0; z-index: 70; display: none; place-items: center; padding: 20px; }
+mx-upload.open, mx-export.open, mx-settings.open, mx-fetchmeta.open { display: grid; }
 
 /* Cover frame: --bw is the border thickness (Settings). 0 = bare cover stretched to fill (FitXY). */
 :root { --bw: 6px; }
@@ -364,8 +364,6 @@ mx-card:hover .stack i:nth-child(2) { transform: translate(8px, -6px) rotate(2.5
 .sg-fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 8px 12px; margin: 8px 0; }
 
 /* ---- Fetch category / cover (book panel) ---- */
-.fetch-row { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-top: -4px; }
-.fetch-row > #fc-out { flex-basis: 100%; }
 .fetch-card { display: flex; gap: 14px; align-items: flex-start; margin-top: 10px; padding: 12px; border: 1px solid var(--line); border-radius: 14px; background: var(--glass-2); }
 .fetch-btns { display: flex; gap: 8px; margin-top: 8px; }
 .cand-cover { width: 84px; border-radius: 6px; box-shadow: var(--shadow); flex: none; }
@@ -373,3 +371,28 @@ mx-card:hover .stack i:nth-child(2) { transform: translate(8px, -6px) rotate(2.5
 .sg-row { grid-template-columns: auto 1fr auto; }
 .sg-picks { display: flex; flex-direction: column; gap: 8px; padding-top: 2px; }
 .sg-cover { width: 64px; border-radius: 6px; box-shadow: var(--shadow); align-self: start; }
+
+/* ---- Fetch metadata dialog ---- */
+.dialog.fm { width: min(860px, 100%); }
+.fm-body { margin-top: 6px; }
+.fm-h3 { font-size: .8125rem; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin: 18px 0 8px; }
+.fm-wait { display: flex; gap: 14px; align-items: center; padding: 26px 4px; }
+.spinner { width: 22px; height: 22px; border-radius: 50%; border: 3px solid var(--line); border-top-color: var(--a1); animation: spin .8s linear infinite; flex: none; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.fm-covers { display: flex; gap: 12px; flex-wrap: wrap; }
+.fm-cv { position: relative; width: 118px; padding: 8px; border-radius: 14px; border: 1.5px solid var(--line); cursor: pointer; display: flex; flex-direction: column; gap: 6px; align-items: center; text-align: center; transition: .15s; }
+.fm-cv:has(input:checked) { border-color: var(--a1); background: color-mix(in srgb, var(--a1) 14%, transparent); }
+.fm-cv input, .fm-opt input { position: absolute; opacity: 0; pointer-events: none; }
+.fm-cv:has(input:focus-visible), .fm-opt:has(input:focus-visible) { outline: 2px solid var(--a2); outline-offset: 2px; }
+.fm-img { width: 100%; aspect-ratio: 2 / 3; display: grid; place-items: center; border-radius: 6px; overflow: hidden; background: var(--glass-2); }
+.fm-img img { width: 100%; height: 100%; object-fit: cover; }
+.fm-none { font-size: .75rem; color: var(--muted); border: 1px dashed var(--line); width: 100%; height: 100%; display: grid; place-items: center; border-radius: 6px; }
+.fm-grid { display: grid; grid-template-columns: 110px minmax(0, 1fr) minmax(0, 1fr); gap: 8px 10px; align-items: stretch; }
+.fm-h { font-size: .72rem; color: var(--muted); font-weight: 500; }
+.fm-f { font-weight: 500; padding-top: 10px; font-size: .875rem; }
+.fm-new { display: flex; flex-direction: column; gap: 6px; }
+.fm-opt { position: relative; display: block; padding: 8px 10px; border-radius: 10px; border: 1.5px solid var(--line); cursor: pointer; transition: .15s; font-size: .8125rem; }
+.fm-new .fm-opt { flex: 1; }
+.fm-opt:has(input:checked) { border-color: var(--a1); background: color-mix(in srgb, var(--a1) 14%, transparent); }
+.fm-val { display: block; white-space: pre-wrap; overflow-wrap: anywhere; max-height: 8.5em; overflow: auto; }
+@media (max-width: 640px) { .fm-grid { grid-template-columns: 1fr 1fr; } .fm-h:first-child { display: none; } .fm-f { grid-column: 1 / -1; padding-top: 6px; } }

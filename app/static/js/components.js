@@ -72,11 +72,10 @@ class MxDrawer extends HTMLElement {
               <a class="btn primary" href="/api/books/${b.id}/download">${icon("download")}Download</a>
               ${b.format === "pdf" ? `<a class="btn" target="_blank" rel="noopener" href="/api/books/${b.id}/download?inline=true">${icon("book")}Read</a>` : ""}
               <button class="btn" data-act="cover">${icon("image")}${b.cover_source === "user" ? "Replace cover" : "Upload cover"}</button>
-              <button class="btn" data-act="fetch-cover" title="Look for a cover on Google Books / Open Library">${icon("search")}Fetch cover</button>
+              <button class="btn" data-act="fetch-meta" title="Compare this book with Google Books / Open Library and pick what to keep">${icon("search")}Fetch metadata</button>
               ${b.cover_source === "user" ? `<button class="btn" data-act="uncover" title="Go back to the cover embedded in the book">Remove custom cover</button>` : ""}
               <input type="file" accept="image/*" hidden id="cover-in">
             </div>
-            <div id="fcv-out"></div>
           </div>
         </div>
 
@@ -90,11 +89,6 @@ class MxDrawer extends HTMLElement {
             <label class="field"><span>Series #</span><input class="in" name="series_index" type="number" step="any" value="${b.series_index ?? ""}"></label>
             <label class="field"><span>Category</span><input class="in" name="category" list="cat-list" value="${esc(b.category)}"></label>
             <label class="field"><span>Sub-category</span><input class="in" name="subcategory" value="${esc(b.subcategory)}"></label>
-            <div class="full fetch-row">
-              <button type="button" class="btn sm" data-act="fetch-cat" title="Look up on Google Books / Open Library">${icon("search")}Fetch category</button>
-              <span class="small muted">Fills the form from Google Books / Open Library. Nothing is saved until you press Save metadata.</span>
-              <div id="fc-out"></div>
-            </div>
             <label class="field"><span>Publisher</span><input class="in" name="publisher" value="${esc(b.publisher)}"></label>
             <label class="field"><span>Published</span><input class="in" name="published" placeholder="YYYY or YYYY-MM-DD" value="${esc(b.published)}"></label>
             <label class="field"><span>Language</span><input class="in" name="language" placeholder="en" value="${esc(b.language)}"></label>
@@ -203,9 +197,9 @@ class MxDrawer extends HTMLElement {
     };
   }
 
-  /** Re-render (after a cover change) without losing metadata the user has typed or filled in but not saved yet. */
-  renderKeepingEdits() {
-    const snap = [...this.querySelectorAll("#mform [name]")].map((e) => [e.name, e.value]);
+  /** Re-render without losing metadata the user has typed but not saved yet (fields in `skip` were just saved). */
+  renderKeepingEdits(skip = []) {
+    const snap = [...this.querySelectorAll("#mform [name]")].filter((e) => !skip.includes(e.name)).map((e) => [e.name, e.value]);
     this.render();
     for (const [name, value] of snap) {
       const el = this.querySelector(`#mform [name="${name}"]`);
@@ -213,71 +207,16 @@ class MxDrawer extends HTMLElement {
     }
   }
 
-  /** "Fetch category" (fills the form) and "Fetch cover" (preview, then keep) - independent of each other. */
+  /** "Fetch metadata": compare with Google Books / Open Library in a dialog and apply only what the user picks. */
   bindLookup() {
-    const b = this.book;
-    const fcat = this.querySelector('[data-act="fetch-cat"]'), fcover = this.querySelector('[data-act="fetch-cover"]');
-    lookupEnabled().then((on) => { if (!on) { fcat.closest(".fetch-row").remove(); fcover.remove(); } });
-    const note = (el, msg) => { el.innerHTML = `<div class="fetch-card"><span class="muted small">${esc(msg)}</span></div>`; };
-
-    fcat.onclick = async () => {
-      const out = this.querySelector("#fc-out"), label = fcat.innerHTML;
-      fcat.disabled = true; fcat.textContent = "Looking up…"; out.innerHTML = "";
-      try {
-        const r = await api("/lookup/suggest", { json: { ids: [b.id], fields: ["category"], overwrite: true }, quiet: true });
-        const res = r.results[0], s = res.suggestion;
-        if (r.unavailable) return note(out, `Could not reach Google Books / Open Library (${r.unavailable}).`);
-        if (!s) return note(out, res.reason || "No match found online.");
-        out.innerHTML = `<div class="fetch-card"><div style="flex:1;min-width:0">
-            <div class="small muted">${esc(s.source)} · ${s.confidence === "isbn" ? "ISBN match" : "title match"}${s.matched ? ` · “${esc(s.matched)}”` : ""}</div>
-            <div style="margin:4px 0">${s.category ? `Category <b>${esc(s.category)}</b>` : ""}${s.subcategory ? ` › <b>${esc(s.subcategory)}</b>` : ""}</div>
-            ${s.tags?.length ? `<label class="check small"><input type="checkbox" id="fc-tags" checked><span>Also add tags: ${s.tags.map(esc).join(", ")}</span></label>` : ""}
-            <div class="fetch-btns"><button type="button" class="btn sm primary" id="fc-use">Fill the form</button><button type="button" class="btn sm" id="fc-no">Dismiss</button></div>
-          </div></div>`;
-        out.querySelector("#fc-no").onclick = () => (out.innerHTML = "");
-        out.querySelector("#fc-use").onclick = () => {
-          const set = (name, v) => { const i = this.querySelector(`[name="${name}"]`); i.value = v; i.classList.add("filled"); };
-          if (s.category) set("category", s.category);
-          if (s.subcategory) set("subcategory", s.subcategory);
-          const tagsBox = out.querySelector("#fc-tags");
-          if (tagsBox?.checked) {
-            const input = this.querySelector('[name="tags"]');
-            const have = input.value.split(",").map((t) => t.trim()).filter(Boolean);
-            const merged = [...have, ...s.tags.filter((t) => !have.some((h) => h.toLowerCase() === t.toLowerCase()))];
-            set("tags", merged.join(", "));
-          }
-          note(out, "Filled in. Press Save metadata to keep it.");
-        };
-      } catch (e) { note(out, e.message || "Lookup failed."); }
-      finally { fcat.disabled = false; fcat.innerHTML = label; }
-    };
-
-    fcover.onclick = async () => {
-      const out = this.querySelector("#fcv-out"), label = fcover.innerHTML;
-      fcover.disabled = true; fcover.textContent = "Looking up…"; out.innerHTML = "";
-      try {
-        const res = await fetch(`/api/lookup/cover/${b.id}`);
-        if (!res.ok) {
-          const msg = res.status === 404 ? "No cover found online for this book." : res.status === 503 ? "Could not reach Google Books / Open Library." : "Cover lookup is not available.";
-          return note(out, msg);
-        }
-        const blob = await res.blob(), url = URL.createObjectURL(blob);
-        const src = res.headers.get("X-Cover-Source"), how = res.headers.get("X-Cover-Confidence") === "isbn" ? "ISBN match" : "title match";
-        out.innerHTML = `<div class="fetch-card"><img class="cand-cover" src="${url}" alt="Cover found online"><div>
-            <div class="small muted">${esc(src)} · ${how}${res.headers.get("X-Cover-Matched") ? ` · “${esc(res.headers.get("X-Cover-Matched"))}”` : ""}</div>
-            <div class="small muted">${b.has_cover ? "Replaces the current cover." : "This book has no cover yet."}</div>
-            <div class="fetch-btns"><button type="button" class="btn sm primary" id="fcv-use">Use this cover</button><button type="button" class="btn sm" id="fcv-no">Discard</button></div>
-          </div></div>`;
-        out.querySelector("#fcv-no").onclick = () => { URL.revokeObjectURL(url); out.innerHTML = ""; };
-        out.querySelector("#fcv-use").onclick = async () => {
-          const fd = new FormData(); fd.append("file", blob, "cover.jpg");
-          try {
-            this.book = await api(`/books/${b.id}/cover`, { method: "PUT", body: fd });
-            URL.revokeObjectURL(url); emit("book-updated", this.book); this.renderKeepingEdits(); toast("Cover saved next to the book");
-          } catch {}
-        };
-      } catch { note(out, "Could not reach the server."); }
-      finally { fcover.disabled = false; fcover.innerHTML = label; }
+    const btn = this.querySelector('[data-act="fetch-meta"]');
+    lookupEnabled().then((on) => { if (!on) btn.remove(); });
+    btn.onclick = () => {
+      const current = Object.fromEntries([...this.querySelectorAll("#mform [name]")].map((e) => [e.name, e.value]));
+      document.getElementById("fetchmeta").open({
+        book: this.book, current,
+        applied: (book, skip) => { this.book = book; emit("book-updated", book); this.renderKeepingEdits(skip); },
+      });
     };
   }
 }
@@ -285,6 +224,108 @@ customElements.define("mx-drawer", MxDrawer);
 
 let _lookupOn;
 const lookupEnabled = () => (_lookupOn ||= api("/lookup/status", { quiet: true }).then((s) => s.enabled).catch(() => { _lookupOn = null; return false; }));
+
+// ------------------------------------------------------------------ <mx-fetchmeta>
+const FETCH_FIELDS = [["title", "Title"], ["subtitle", "Subtitle"], ["author", "Author(s)"], ["category", "Category"], ["subcategory", "Sub-category"],
+  ["tags", "Tags"], ["publisher", "Publisher"], ["published", "Published"], ["language", "Language"], ["isbn", "ISBN"], ["description", "Description"]];
+const asText = (v) => (Array.isArray(v) ? v.join(", ") : String(v ?? "").trim());
+const splitTags = (v) => (Array.isArray(v) ? v : String(v || "").split(",")).map((t) => t.trim()).filter(Boolean);
+const tagKey = (v) => [...new Set(splitTags(v).map((t) => t.toLowerCase()))].sort().join("|");
+const squash = (name, v) => (name === "isbn" ? asText(v).replace(/[^0-9x]/gi, "") : asText(v)).toLowerCase();
+const sameValue = (name, a, b) => (name === "tags" ? tagKey(a) === tagKey(b) : squash(name, a) === squash(name, b));
+const mergeTags = (have, add) => [...splitTags(have), ...splitTags(add).filter((t) => !splitTags(have).some((h) => h.toLowerCase() === t.toLowerCase()))];
+
+/** Compare a book with what Google Books / Open Library know; every choice defaults to the current value. */
+class MxFetchMeta extends HTMLElement {
+  open(ctx) {
+    this.ctx = ctx;
+    this.classList.add("open");
+    this._esc = (e) => { if (e.key === "Escape") { e.stopImmediatePropagation(); this.close(); } };
+    document.addEventListener("keydown", this._esc, true);
+    this.frame(`<div class="fm-wait"><span class="spinner"></span><div><b>Looking up “${esc(ctx.book.title)}”…</b>
+      <div class="muted small">Asking Google Books and Open Library and downloading a few covers - this takes a few seconds.</div></div></div>`,
+      `<button class="btn" id="fm-cancel">Cancel</button>`);
+    const mine = (this.token = {});
+    api(`/lookup/metadata/${ctx.book.id}`, { quiet: true }).then((r) => { if (this.token === mine) this.show(r); })
+      .catch((e) => { if (this.token === mine) this.frame(`<p class="muted">${esc(e.message || "Lookup failed.")}</p>`, `<button class="btn primary" id="fm-cancel">Close</button>`); });
+  }
+  close() {
+    this.token = null; this.classList.remove("open"); this.innerHTML = "";
+    document.removeEventListener("keydown", this._esc, true);
+  }
+  frame(body, actions, sub = "") {
+    this.innerHTML = `<div class="scrim" style="position:absolute;inset:0;background:rgba(2,2,10,.6);backdrop-filter:blur(4px)"></div>
+      <div class="dialog glass fm" role="dialog" aria-label="Fetch metadata">
+        <h2>Fetch metadata</h2><div class="muted small">${sub || esc(this.ctx.book.title)}</div>
+        <div class="fm-body">${body}</div><div class="dialog-actions">${actions}</div></div>`;
+    this.querySelector(".scrim").onclick = () => this.close();
+    this.querySelector("#fm-cancel").onclick = () => this.close();
+  }
+
+  show(r) {
+    const { book, current } = this.ctx;
+    const rows = FETCH_FIELDS.filter(([k]) => r.fields[k] != null && r.fields[k].length);
+    const diff = rows.filter(([k]) => !sameValue(k, current[k], r.fields[k]));
+    const same = rows.filter(([k]) => sameValue(k, current[k], r.fields[k]));
+    const val = (v) => (asText(v) ? esc(asText(v)) : `<i class="muted">empty</i>`);
+    const cell = (name, choice, html, cls = "") => `<label class="fm-opt${cls}"><input type="radio" name="f-${name}" value="${choice}"${choice === "keep" ? " checked" : ""}><span class="fm-val">${html}</span></label>`;
+    const meta = diff.length ? `<div class="fm-grid"><div class="fm-h">Field</div><div class="fm-h">Current</div><div class="fm-h">New</div>
+      ${diff.map(([k, label]) => {
+        const both = k === "tags" && splitTags(current.tags).length ? mergeTags(current.tags, r.fields.tags) : null;
+        return `<div class="fm-f">${label}</div>${cell(k, "keep", val(current[k]))}
+          <div class="fm-new">${cell(k, "new", val(r.fields[k]))}${both ? cell(k, "merge", `<small class="muted">Both:</small> ${esc(both.join(", "))}`) : ""}</div>`;
+      }).join("")}</div>`
+      : `<p class="muted">${rows.length ? "Everything found online already matches this book." : "No metadata found online for this book."}</p>`;
+
+    const cur = book.has_cover ? `<img src="/api/books/${book.id}/cover?v=${encodeURIComponent(book.updated_at)}" alt="Current cover">` : `<div class="fm-none">No cover</div>`;
+    const covers = `<div class="fm-covers">
+      <label class="fm-cv"><input type="radio" name="cover" value="current" checked><div class="fm-img">${cur}</div><span class="small"><b>Current</b></span></label>
+      ${r.covers.map((c, i) => `<label class="fm-cv"><input type="radio" name="cover" value="${c.key}"><div class="fm-img"><img src="/api/lookup/cover-img/${c.key}" alt="Cover option ${i + 1}"></div>
+        <span class="small"><b>${esc(c.source)}</b><br><span class="muted">${c.width}×${c.height}${c.confidence === "isbn" ? " · ISBN" : ""}</span></span></label>`).join("")}</div>
+      ${r.covers.length ? (r.covers.length < 3 ? `<p class="muted small">Only ${r.covers.length} cover${r.covers.length > 1 ? "s" : ""} found online for this book.</p>` : "")
+        : `<p class="muted small">No cover found online for this book.</p>`}`;
+
+    this.frame(`<h3 class="fm-h3">Cover</h3>${covers}<h3 class="fm-h3">Metadata</h3>${meta}
+      ${same.length ? `<p class="muted small">Already the same: ${same.map(([, l]) => l).join(", ")}.</p>` : ""}`,
+      `<span class="muted small" id="fm-count" style="margin-right:auto"></span><button class="btn" id="fm-cancel">Cancel</button><button class="btn primary" id="fm-apply">${icon("save")}Apply</button>`,
+      `${esc(r.source || "No match")}${r.matched ? ` · matched “${esc(r.matched)}”` : ""}${r.confidence ? ` · ${r.confidence === "isbn" ? "ISBN match" : "title + author match"}` : ""} · nothing changes until you press Apply`);
+
+    const apply = this.querySelector("#fm-apply"), count = this.querySelector("#fm-count");
+    const picks = () => {
+      const fields = {};
+      for (const [k] of diff) {
+        const v = this.querySelector(`input[name="f-${k}"]:checked`)?.value;
+        if (v === "new") fields[k] = k === "tags" ? splitTags(r.fields.tags) : r.fields[k];
+        if (v === "merge") fields[k] = mergeTags(current.tags, r.fields.tags);
+      }
+      return { fields, cover: this.querySelector('input[name="cover"]:checked')?.value };
+    };
+    const refresh = () => {
+      const p = picks(), n = Object.keys(p.fields).length + (p.cover !== "current" ? 1 : 0);
+      apply.disabled = !n;
+      count.textContent = n ? `${n} change${n > 1 ? "s" : ""} selected` : "Nothing selected - the current values are kept";
+    };
+    this.querySelector(".fm-body").addEventListener("change", refresh);
+    refresh();
+    apply.onclick = async () => {
+      const p = picks(); apply.disabled = true; apply.textContent = "Saving…";
+      try {
+        let saved = book;
+        if (Object.keys(p.fields).length) saved = await api(`/books/${book.id}`, { method: "PATCH", json: p.fields });
+        if (p.cover !== "current") {
+          const res = await fetch(`/api/lookup/cover-img/${p.cover}`);
+          if (!res.ok) throw new Error("That cover is no longer available - fetch the metadata again.");
+          const fd = new FormData(); fd.append("file", await res.blob(), "cover.jpg");
+          saved = await api(`/books/${book.id}/cover`, { method: "PUT", body: fd });
+        }
+        this.ctx.applied(saved, Object.keys(p.fields));
+        this.close(); toast("Saved" + (p.cover !== "current" ? " · cover stored next to the book" : ""));
+      } catch (e) { toast(e.message || "Could not save", "err"); apply.disabled = false; apply.textContent = "Apply"; }
+    };
+    (apply.disabled ? this.querySelector("#fm-cancel") : apply).focus();
+  }
+}
+customElements.define("mx-fetchmeta", MxFetchMeta);
 
 // ------------------------------------------------------------------ <mx-upload>
 async function walkEntry(entry, path = "") {

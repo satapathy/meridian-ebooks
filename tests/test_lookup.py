@@ -248,3 +248,65 @@ def test_lookup_can_be_disabled(client, monkeypatch):
     assert client.get("/api/lookup/status").json()["enabled"] is False
     assert client.get("/api/lookup/candidates").status_code == 403
     assert client.post("/api/lookup/suggest", json={"ids": ["x"]}).status_code == 403
+
+
+# --------------------------------------------------------------------------- "Fetch metadata" (compare + pick a cover)
+def _gitem(title="Dune", n=1, **extra):
+    return {"volumeInfo": {"title": title, "authors": ["Frank Herbert"], "categories": ["Fiction / Science Fiction / Space Opera"],
+                           "imageLinks": {"thumbnail": f"http://books.google.com/books/content?id=ed{n}&zoom=1&edge=curl"}, **extra}}
+
+
+def test_fetch_metadata_returns_fields_and_several_distinct_covers(client, fake_net):
+    bid = _upload(client, "a.epub", make_epub(title="Dune", author="Frank Herbert", marker="m1"))
+    fake_net.google = {"items": [_gitem(n=1, publisher="Chilton", publishedDate="1965", language="en",
+                                        subtitle="", description="<p>Arrakis.</p><p>Spice &amp; sand.</p>"),
+                                 _gitem(n=2), _gitem(n=3)]}
+    fake_net.openlib = {"docs": [{"title": "Dune", "author_name": ["Frank Herbert"], "subject": ["Deserts", "Ecology"], "cover_i": 77}]}
+    fake_net.images = {"https://books.google.com/books/content?id=ed1&zoom=2": png(300, 450, (200, 0, 0)),
+                       "https://books.google.com/books/content?id=ed2&zoom=2": png(300, 450, (0, 200, 0)),
+                       "https://books.google.com/books/content?id=ed3&zoom=2": png(300, 450, (200, 0, 0)),      # same picture as ed1
+                       "https://covers.openlibrary.org/b/id/77-L.jpg": png(300, 450, (0, 0, 200))}
+    r = client.get(f"/api/lookup/metadata/{bid}")
+    assert r.status_code == 200, r.text
+    d = r.json()
+    f = d["fields"]
+    assert (f["category"], f["subcategory"], f["publisher"], f["published"], f["language"]) == \
+        ("Science Fiction", "Space Opera", "Chilton", "1965", "en")
+    assert f["description"] == "Arrakis.\nSpice & sand." and f["tags"] == ["Deserts", "Ecology"] and "subtitle" not in f
+    assert d["source"] == "Google Books + Open Library"
+    assert len(d["covers"]) == 3                                           # duplicate image dropped; Google 2 + Open Library 1
+    assert {c["source"] for c in d["covers"]} == {"Google Books", "Open Library"}
+    img = client.get(f"/api/lookup/cover-img/{d['covers'][0]['key']}")
+    assert img.status_code == 200 and img.headers["content-type"] == "image/jpeg"
+    assert client.get(f"/api/books/{bid}").json()["publisher"] == ""       # previewing saved nothing
+
+
+def test_fetch_metadata_unknown_cover_key_and_errors(client, fake_net):
+    bid = _upload(client, "a.epub", make_epub(title="Dune", marker="m2"))
+    assert client.get("/api/lookup/cover-img/" + "0" * 32).status_code == 404
+    assert client.get("/api/lookup/cover-img/not-a-key").status_code == 404
+    assert client.get("/api/lookup/metadata/nope").status_code == 404
+    d = client.get(f"/api/lookup/metadata/{bid}").json()                   # nothing known online: empty, not an error
+    assert d["fields"] == {} and d["covers"] == []
+    fake_net.down = True
+    assert client.get(f"/api/lookup/metadata/{bid}").status_code == 503
+
+
+def test_fetch_metadata_rejects_a_different_book(client, fake_net):
+    bid = _upload(client, "a.epub", make_epub(title="Dune", author="Frank Herbert", marker="m3"))
+    client.patch(f"/api/books/{bid}", json={"isbn": ""})                   # no ISBN -> matched by title + author only
+    fake_net.google = {"items": [{"volumeInfo": {"title": "Dune Messiah", "authors": ["Frank Herbert"], "categories": ["Fiction / X"]}}]}
+    assert client.get(f"/api/lookup/metadata/{bid}").json()["fields"] == {}
+
+
+def test_fetch_metadata_collects_title_author_isbn_and_fills_gaps_from_open_library(client, fake_net):
+    bid = _upload(client, "a.epub", make_epub(title="Dune", author="Frank Herbert", marker="m4"))
+    client.patch(f"/api/books/{bid}", json={"isbn": ""})
+    fake_net.google = {"items": [_gitem(industryIdentifiers=[{"type": "ISBN_10", "identifier": "0441013597"},
+                                                             {"type": "ISBN_13", "identifier": "9780441013593"}])]}
+    fake_net.openlib = {"docs": [{"title": "Dune", "author_name": ["Frank Herbert"], "first_publish_year": 1965,
+                                  "publisher": ["Chilton Books", "Ace"], "language": ["eng", "fre"], "isbn": ["0441013597", "9780441013593"]}]}
+    f = client.get(f"/api/lookup/metadata/{bid}").json()["fields"]
+    assert f["isbn"] == "9780441013593"                       # ISBN-13 preferred
+    assert (f["title"], f["author"]) == ("Dune", "Frank Herbert")
+    assert (f["publisher"], f["published"], f["language"]) == ("Chilton Books", "1965", "en")   # Google had none -> Open Library
