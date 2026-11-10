@@ -34,6 +34,56 @@ Runs in one container, including on a Raspberry Pi.
 * Restarts automatically after a reboot (see the Raspberry Pi section)
 * No built-in authentication - put it behind a reverse proxy or VPN before exposing it
 
+## Managing the container
+
+Run these in the project folder (next to `docker-compose.yml`). Your books and database live in the data folder (`./data` by default), not in the container or image, so none of the commands below delete them.
+
+**Status and logs**
+
+```bash
+docker compose ps                      # is it running / healthy?
+docker compose logs -f                 # follow the logs live (Ctrl+C stops following, not the app)
+docker compose logs --tail 100         # last 100 lines
+docker compose logs --since 30m        # last 30 minutes
+docker compose logs -t | grep -i error # timestamps, filtered for errors
+```
+
+**Stop and start**
+
+```bash
+docker compose stop                    # stop, keep the container
+docker compose start                   # start it again
+docker compose restart                 # restart (e.g. after changing .env)
+```
+
+**Remove the container**
+
+```bash
+docker compose down                    # stop and remove the container (data folder is untouched)
+```
+
+**Remove the image** (frees disk space; the next `docker compose up --build` rebuilds it)
+
+```bash
+docker compose down --rmi local        # remove the container and the image built for this project
+docker image ls meridian-ebooks        # confirm it is gone
+docker image prune -f                  # optional: also delete dangling layers left by old builds
+```
+
+**Start completely fresh** - this one **does delete your library**; back up the data folder first:
+
+```bash
+docker compose down --rmi local
+rm -rf ./data                          # or whatever MERIDIAN_DATA points to
+mkdir -p data
+```
+
+**Update after pulling new code**
+
+```bash
+docker compose up --build -d
+```
+
 ## Screenshots
 
 <!-- Images live in docs/screenshots/. Regenerate them with scripts/capture_screenshots.py (see Development). -->
@@ -115,12 +165,7 @@ Test the boot behaviour with `sudo reboot`, then after a minute or two open the 
 
 Useful commands (run in the project folder):
 
-| Task | Command |
-|---|---|
-| Logs | `docker compose logs -f` |
-| Stop / start | `docker compose stop` / `docker compose start` |
-| Update after pulling new code | `docker compose up --build -d` |
-| Remove the container (data is kept in `./data`) | `docker compose down` |
+Logs, stop/start, removing the container or image and updating are covered in [Managing the container](#managing-the-container).
 
 Notes:
 * A container you stopped yourself with `docker compose stop` stays stopped after a reboot (that is what `unless-stopped` means). Use `docker compose start` to bring it back.
