@@ -66,6 +66,7 @@ def split_authors(author: str) -> list[str]:
 # --------------------------------------------------------------------------- serialisation
 def to_book(row: sqlite3.Row) -> dict:
     d = dict(row)
+    d.pop("rn", None)  # helper column of the grouped query
     d["tags"] = json.loads(d["tags"] or "[]")
     d["authors"] = split_authors(d["author"])
     d["has_cover"] = bool(d["has_cover"])
@@ -367,10 +368,12 @@ def _where(q=None, author=None, category=None, fmt=None, tag=None, series=None, 
 
 
 def list_books(*, q=None, author=None, category=None, fmt=None, tag=None, series=None, subcategory=None,
-               sort="added", order="desc", limit=60, offset=0) -> dict:
+               sort="added", order="desc", limit=60, offset=0, group_series=False) -> dict:
     where, params = _where(q, author, category, fmt, tag, series, subcategory)
     col = SORTS.get(sort, SORTS["added"])
     direction = "ASC" if order.lower() == "asc" else "DESC"
+    if group_series:
+        return _list_grouped(where, params, col, direction, limit, offset)
     with db() as conn:
         total = conn.execute(f"SELECT COUNT(*) FROM books{where}", params).fetchone()[0]
         rows = conn.execute(
@@ -378,6 +381,34 @@ def list_books(*, q=None, author=None, category=None, fmt=None, tag=None, series
             [*params, limit, offset],
         ).fetchall()
         items = [to_book(r) for r in rows]
+    return {"items": items, "total": total, "limit": limit, "offset": offset}
+
+
+def _list_grouped(where: str, params: list, col: str, direction: str, limit: int, offset: int) -> dict:
+    """Like list_books, but every series collapses into one entry: its first book (by series number)
+    with `series_count` set to the size of the whole series. Books without a series are unchanged."""
+    base = (
+        f"WITH f AS (SELECT * FROM books{where}), "
+        "r AS (SELECT f.*, CASE WHEN f.series = '' THEN 1 ELSE ROW_NUMBER() OVER ("
+        "PARTITION BY lower(f.series) ORDER BY COALESCE(f.series_index, 1e9), f.title COLLATE NOCASE) END AS rn FROM f) "
+    )
+    with db() as conn:
+        total = conn.execute(base + "SELECT COUNT(*) FROM r WHERE rn = 1", params).fetchone()[0]
+        rows = conn.execute(
+            base + f"SELECT * FROM r WHERE rn = 1 ORDER BY {col} {direction}, title COLLATE NOCASE ASC LIMIT ? OFFSET ?",
+            [*params, limit, offset],
+        ).fetchall()
+        names = sorted({r["series"].lower() for r in rows if r["series"]})
+        counts: dict[str, int] = {}
+        if names:
+            q = ",".join("?" * len(names))
+            counts = {r[0]: r[1] for r in conn.execute(
+                f"SELECT lower(series), COUNT(*) FROM books WHERE lower(series) IN ({q}) GROUP BY lower(series)", names)}
+        items = []
+        for r in rows:
+            b = to_book(r)
+            b["series_count"] = counts.get(r["series"].lower(), 1) if r["series"] else 1
+            items.append(b)
     return {"items": items, "total": total, "limit": limit, "offset": offset}
 
 

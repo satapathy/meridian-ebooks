@@ -31,6 +31,7 @@ class Book(BaseModel):
     size: int
     md5: str = Field(description="MD5 of the file as first uploaded (duplicate key)")
     has_cover: bool
+    series_count: Optional[int] = Field(None, description="Only with group_series=true: number of books in this book's series (the entry stands for the whole series when > 1)")
     cover_source: Optional[str] = Field(None, description="user (uploaded, stored next to the book) | embedded (from the book file) | null")
     source_path: Optional[str] = Field(None, description="Original relative path for folder uploads")
     added_at: str

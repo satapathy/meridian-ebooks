@@ -1,5 +1,5 @@
 // Web components (light DOM, themed by app.css).
-import { api, esc, icon, toast, coverHTML, fmtBytes, emit, THEMES, getPref, setPref } from "./api.js";
+import { api, esc, icon, toast, coverHTML, fmtBytes, emit, THEMES, FONTS, clampFs, getPref, setPref } from "./api.js";
 
 const EXT_OK = new Set("epub pdf docx doc odt rtf txt md html htm mobi azw azw3 kfx fb2 djvu cbz cbr cb7 lit chm pdb zip json".split(" "));
 const extOf = (n) => n.split(".").pop().toLowerCase();
@@ -8,15 +8,25 @@ const extOf = (n) => n.split(".").pop().toLowerCase();
 class MxCard extends HTMLElement {
   set book(b) { this._b = b; this.dataset.id = b.id; this.render(); }
   get book() { return this._b; }
+  get isSeries() { return (this._b.series_count || 0) > 1; }
   connectedCallback() {
     this.tabIndex = 0;
-    this.addEventListener("click", () => emit("open-book", this._b));
-    this.addEventListener("keydown", (e) => { if (e.key === "Enter") emit("open-book", this._b); });
-    document.addEventListener("book-updated", this._upd = (e) => { if (e.detail.id === this.dataset.id) this.book = e.detail; });
+    const open = () => {
+      if (this.isSeries) location.hash = `#/library?series=${encodeURIComponent(this._b.series)}&sort=series&order=asc`;
+      else emit("open-book", this._b);
+    };
+    this.addEventListener("click", open);
+    this.addEventListener("keydown", (e) => { if (e.key === "Enter") open(); });
+    document.addEventListener("book-updated", this._upd = (e) => { if (!this.isSeries && e.detail.id === this.dataset.id) this.book = e.detail; });
   }
   disconnectedCallback() { document.removeEventListener("book-updated", this._upd); }
   render() {
     const b = this._b;
+    if (this.isSeries) {  // one stacked tile standing for the whole series
+      this.innerHTML = `<div class="stack"><i></i><i></i><div class="poster">${coverHTML({ ...b, title: b.series })}<span class="fmt">${b.series_count} books</span></div></div>
+        <div class="meta"><div class="t" title="${esc(b.series)}">${esc(b.series)}</div><div class="a">Series · ${esc(b.author || "Unknown author")}</div></div>`;
+      return;
+    }
     this.innerHTML = `<div class="poster">${coverHTML(b)}<span class="fmt">${esc(b.format)}</span>
       ${b.rating ? `<span class="stars">${"★".repeat(b.rating)}</span>` : ""}</div>
       <div class="meta"><div class="t" title="${esc(b.title)}">${esc(b.title)}</div><div class="a">${esc(b.author || "Unknown author")}</div></div>`;
@@ -379,21 +389,41 @@ class MxSettings extends HTMLElement {
   close() { this.classList.remove("open"); this.innerHTML = ""; }
   render() {
     const theme = getPref("theme", "vanilla"), bw = Math.max(0, Math.min(16, Number(getPref("border", "6")) || 0));
+    const font = getPref("font", "inter"), fs = clampFs(getPref("fs", "100")), group = getPref("series", "on") !== "off";
     this.innerHTML = `<div class="scrim" style="position:absolute;inset:0;background:rgba(2,2,10,.6);backdrop-filter:blur(4px)"></div>
       <div class="dialog glass" role="dialog" aria-label="Settings">
         <h2>Settings</h2>
         <div class="muted small">Saved in this browser.</div>
-        <h3 style="font-size:13px;text-transform:uppercase;letter-spacing:.12em;color:var(--muted);margin-top:20px">Theme</h3>
+
+        <div class="set-h">Theme</div>
         <div class="theme-grid">${Object.entries(THEMES).map(([k, [name, bg]]) =>
           `<button class="theme-opt" data-t="${k}" aria-pressed="${k === theme}"><i style="background:${bg}"></i>${name}</button>`).join("")}</div>
-        <div class="row-set" style="display:block"><div style="display:flex;justify-content:space-between"><div><b>Cover border</b><div class="small muted">White frame around every cover. 0 = no frame, cover stretched to fit (FitXY).</div></div><b id="bw-val">${bw}px</b></div>
+
+        <div class="set-h">Typography</div>
+        <div class="form">
+          <label class="field"><span>Font</span><select class="in" id="font">${Object.entries(FONTS).map(([k, [name, stack]]) =>
+            `<option value="${k}" ${k === font ? "selected" : ""} style="font-family:${stack}">${name}</option>`).join("")}</select></label>
+          <label class="field"><span>Text size · <b id="fs-val">${fs}%</b></span><input type="range" id="fs" min="80" max="130" step="5" value="${fs}" style="accent-color:var(--a1);margin-top:8px" aria-label="Text size"></label>
+        </div>
+        <div class="preview"><b>The quick brown fox</b><span class="muted">Jumps over the lazy dog — 0123456789</span></div>
+
+        <div class="set-h">Covers</div>
+        <div class="row-set" style="display:block;border-top:0;padding-top:0"><div style="display:flex;justify-content:space-between"><div><b>Cover border</b><div class="small muted">White frame around every cover. 0 = no frame, cover stretched to fit (FitXY).</div></div><b id="bw-val">${bw}px</b></div>
           <input type="range" id="bw" min="0" max="16" step="1" value="${bw}" style="width:100%;margin-top:12px;accent-color:var(--a1)" aria-label="Cover border thickness"></div>
+
+        <div class="set-h">Library</div>
+        <div class="row-set" style="border-top:0;padding-top:0"><div><b>Group series</b><div class="small muted">Show each series as one stacked tile; click it to open the series. Off lists every book on its own.</div></div>
+          <button class="switch" role="switch" id="sw-series" aria-checked="${group}" aria-label="Group series"></button></div>
+
         <div class="dialog-actions"><button class="btn primary" id="done">Done</button></div>
       </div>`;
-    this.querySelector(".scrim").onclick = this.querySelector("#done").onclick = () => this.close();
+    const $ = (s) => this.querySelector(s);
+    $(".scrim").onclick = $("#done").onclick = () => this.close();
     this.querySelectorAll("[data-t]").forEach((b) => (b.onclick = () => { setPref("theme", b.dataset.t); this.render(); }));
-    const rng = this.querySelector("#bw");
-    rng.oninput = () => { setPref("border", rng.value); this.querySelector("#bw-val").textContent = rng.value + "px"; };
+    $("#font").onchange = (e) => setPref("font", e.target.value);
+    $("#fs").oninput = (e) => { setPref("fs", e.target.value); $("#fs-val").textContent = e.target.value + "%"; };
+    $("#bw").oninput = (e) => { setPref("border", e.target.value); $("#bw-val").textContent = e.target.value + "px"; };
+    $("#sw-series").onclick = () => { setPref("series", group ? "off" : "on"); this.render(); };
   }
 }
 customElements.define("mx-settings", MxSettings);

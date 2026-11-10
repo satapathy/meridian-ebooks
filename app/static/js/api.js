@@ -39,6 +39,7 @@ export async function api(path, opts = {}) {
 
 const ICONS = {
   home: "M3 11l9-8 9 8v10a1 1 0 0 1-1 1h-5v-7H9v7H4a1 1 0 0 1-1-1z",
+  clock: "M12 7v5l3 2 M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18z",
   library: "M4 4h4v16H4z M10 4h4v16h-4z M16.6 5.6l3.8-1 3 14.8-3.8 1z",
   users: "M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2 M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8z M22 21v-2a4 4 0 0 0-3-3.9 M16 3.1a4 4 0 0 1 0 7.8",
   folder: "M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z",
@@ -95,11 +96,30 @@ export const THEMES = {
   blossom: ["Blossom", "linear-gradient(135deg,#ffd6e2,#e0457b)"],
   lavender: ["Lavender", "linear-gradient(135deg,#e9e3fb,#7c3aed)"],
 };
+// Open-source (SIL OFL) fonts only. [label, CSS stack]
+export const FONTS = {
+  inter: ["Inter", "'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif"],
+  dmsans: ["DM Sans", "'DM Sans', system-ui, sans-serif"],
+  sourcesans: ["Source Sans 3", "'Source Sans 3', system-ui, sans-serif"],
+  plex: ["IBM Plex Sans", "'IBM Plex Sans', system-ui, sans-serif"],
+  nunito: ["Nunito", "'Nunito', system-ui, sans-serif"],
+  poppins: ["Poppins", "'Poppins', system-ui, sans-serif"],
+  space: ["Space Grotesk", "'Space Grotesk', system-ui, sans-serif"],
+  atkinson: ["Atkinson Hyperlegible", "'Atkinson Hyperlegible', system-ui, sans-serif"],
+  lora: ["Lora (serif)", "'Lora', Georgia, 'Times New Roman', serif"],
+  merriweather: ["Merriweather (serif)", "'Merriweather', Georgia, 'Times New Roman', serif"],
+  jetbrains: ["JetBrains Mono (mono)", "'JetBrains Mono', ui-monospace, Consolas, monospace"],
+  system: ["System default", "system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif"],
+};
+export const clampFs = (v) => Math.max(80, Math.min(130, Number(v) || 100));
 export function getPref(k, d) { try { return localStorage.getItem("mx-" + k) ?? d; } catch { return d; } }
-export function setPref(k, v) { try { localStorage.setItem("mx-" + k, v); } catch {} applyPrefs(); }
+export function setPref(k, v) { try { localStorage.setItem("mx-" + k, v); } catch {} applyPrefs(); emit("prefs-changed", { key: k }); }
 export function applyPrefs() {
   const t = getPref("theme", "vanilla");
   document.documentElement.dataset.theme = THEMES[t] ? t : "vanilla";
+  const root = document.documentElement;
+  root.style.setProperty("--font", (FONTS[getPref("font", "inter")] || FONTS.inter)[1]);
+  root.style.fontSize = (16 * clampFs(getPref("fs", "100"))) / 100 + "px";
   const bw = Math.max(0, Math.min(16, Number(getPref("border", "6")) || 0));
   document.documentElement.style.setProperty("--bw", bw + "px");
   document.documentElement.dataset.border = bw ? "on" : "off";

@@ -270,3 +270,24 @@ def test_user_cover_overrides_embedded_and_lives_next_to_json(client):
     assert client.delete(f"/api/books/{tid}/cover").json()["has_cover"] is False
     assert client.get(f"/api/books/{tid}/cover").status_code == 404
     assert client.put(f"/api/books/{tid}/cover", files={"file": ("bad.png", b"nope")}).status_code == 400
+
+
+def test_group_series(client):
+    ids = []
+    for n, (title, series, idx) in enumerate([("Dune", "Dune Saga", 1), ("Dune Messiah", "Dune Saga", 2),
+                                              ("Children of Dune", "dune saga", 3), ("Solo", "", None)]):
+        bid = upload(client, f"{n}.epub", make_epub(title=title, marker=str(n)))["book_id"]
+        if series:
+            client.patch(f"/api/books/{bid}", json={"series": series, "series_index": idx})
+        ids.append(bid)
+    flat = client.get("/api/books").json()
+    assert flat["total"] == 4 and flat["items"][0].get("series_count") is None
+    g = client.get("/api/books", params={"group_series": "true", "sort": "title", "order": "asc"}).json()
+    assert g["total"] == 2 and len(g["items"]) == 2
+    grp = next(b for b in g["items"] if b["series"])
+    assert grp["title"] == "Dune" and grp["series_count"] == 3  # first book by series number, whole-series count
+    assert next(b for b in g["items"] if not b["series"])["series_count"] == 1
+    inside = client.get("/api/books", params={"series": "Dune Saga", "sort": "series", "order": "asc"}).json()
+    assert [b["title"] for b in inside["items"]] == ["Dune", "Dune Messiah", "Children of Dune"]
+    paged = client.get("/api/books", params={"group_series": "true", "limit": 1, "offset": 1, "sort": "title", "order": "asc"}).json()
+    assert paged["total"] == 2 and len(paged["items"]) == 1

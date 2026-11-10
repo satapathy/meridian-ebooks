@@ -1,4 +1,4 @@
-import { api, esc, icon, toast, coverHTML, hue, fmtBytes, emit, applyPrefs } from "./api.js";
+import { api, esc, icon, toast, coverHTML, hue, fmtBytes, emit, applyPrefs, getPref } from "./api.js";
 import "./components.js";
 
 const view = document.getElementById("view");
@@ -6,7 +6,7 @@ let token = 0; // guards against out-of-order async renders
 
 // ------------------------------------------------------------------ chrome
 document.querySelectorAll("[data-icon]").forEach((el) => (el.innerHTML = icon(el.dataset.icon)));
-const NAV = { home: ["home", "Home"], library: ["library", "Library"], authors: ["users", "Authors"], categories: ["folder", "Categories"], tools: ["tools", "Tools"] };
+const NAV = { library: ["library", "Library"], recent: ["clock", "Recently added"], authors: ["users", "Authors"], categories: ["folder", "Categories"], tools: ["tools", "Tools"] };
 document.querySelectorAll("#nav a").forEach((a) => { const [i, l] = NAV[a.dataset.route]; a.innerHTML = `${icon(i)}<span>${l}</span>`; });
 
 applyPrefs();
@@ -65,6 +65,7 @@ function go(to, replace = false) {
 }
 addEventListener("hashchange", () => { $("drawer").close(); render(); });
 document.addEventListener("library-changed", () => { refreshRail(); render(); });
+document.addEventListener("prefs-changed", (e) => { if (e.detail.key === "series") render(); });
 
 async function refreshRail() {
   try { const s = await api("/stats", { quiet: true }); $("rail-stats").textContent = `${s.books} books · ${fmtBytes(s.bytes)}`; } catch {}
@@ -73,10 +74,10 @@ async function refreshRail() {
 async function render() {
   const my = ++token;
   const { path, params } = parse();
-  const route = path === "/" ? "home" : path.split("/")[1];
+  const route = path === "/" ? "library" : path.split("/")[1];
   document.querySelectorAll("#nav a").forEach((a) => a.classList.toggle("active", a.dataset.route === route));
   if (document.activeElement !== searchEl) searchEl.value = route === "library" ? params.get("q") || "" : "";
-  const fn = VIEWS[route] || VIEWS.home;
+  const fn = VIEWS[route] || VIEWS.library;
   const html = document.createElement("div");
   try { await fn(html, params, () => my === token); } catch (e) { html.innerHTML = `<div class="empty"><h2>Something went wrong</h2>${esc(e.message)}</div>`; }
   if (my !== token) return;
@@ -87,13 +88,6 @@ async function render() {
 // ------------------------------------------------------------------ helpers
 const card = (b) => { const c = document.createElement("mx-card"); c.book = b; return c; };
 
-function shelf(title, books, href) {
-  const s = document.createElement("section");
-  s.className = "shelf";
-  s.innerHTML = `<div class="shelf-head"><h2>${esc(title)}</h2>${href ? `<a href="${href}">See all →</a>` : ""}</div><div class="shelf-row"></div>`;
-  s.querySelector(".shelf-row").append(...books.map(card));
-  return s;
-}
 const emptyState = () => `<div class="empty"><h2>Your shelves are empty</h2><p>Add some books to get started — drop files or entire folders anywhere on this page.</p>
   <button class="btn primary" onclick="document.getElementById('upload').open()">${icon("upload")}Add books</button></div>`;
 
@@ -102,42 +96,18 @@ const enc = encodeURIComponent;
 
 // ------------------------------------------------------------------ views
 const VIEWS = {
-  async home(root) {
-    const [stats, recent, facets] = await Promise.all([api("/stats"), api("/books?limit=20&sort=added&order=desc"), api("/facets")]);
-    if (!stats.books) { root.innerHTML = emptyState(); return; }
-    const feat = recent.items.find((b) => b.description && b.has_cover) || recent.items.find((b) => b.has_cover) || recent.items[0];
-    const hero = document.createElement("section");
-    hero.className = "hero glass";
-    hero.innerHTML = `${feat.has_cover ? `<div class="bgimg" style="background-image:url(/api/books/${feat.id}/cover)"></div>` : ""}
-      <div class="poster">${coverHTML(feat)}</div>
-      <div><div class="eyebrow">Latest addition</div><h1 class="grad-text">${esc(feat.title)}</h1>
-      <div class="muted">${esc(feat.author || "Unknown author")}${feat.series ? " · " + esc(feat.series) : ""}</div>
-      <p>${esc(feat.description || "No description yet — open the book to add details.")}</p>
-      <div class="row"><button class="btn primary" data-open>${icon("book")}Open details</button><a class="btn" href="/api/books/${feat.id}/download">${icon("download")}Download</a></div></div>`;
-    hero.querySelector(".poster").onclick = hero.querySelector("[data-open]").onclick = () => emit("open-book", feat);
-    root.append(hero);
-    root.insertAdjacentHTML("beforeend", `<div class="stats">
-      <div class="stat glass"><b class="grad-text">${stats.books}</b><span class="muted">books</span></div>
-      <div class="stat glass"><b class="grad-text">${stats.authors}</b><span class="muted">authors</span></div>
-      <div class="stat glass"><b class="grad-text">${stats.categories}</b><span class="muted">categories</span></div>
-      <div class="stat glass"><b class="grad-text">${fmtBytes(stats.bytes)}</b><span class="muted">on disk</span></div></div>`);
-    root.append(shelf("Recently added", recent.items, "#/library"));
-    const cats = facets.categories.filter((c) => c.name !== "Uncategorized").slice(0, 5);
-    const rows = await Promise.all(cats.map((c) => api(`/books?category=${enc(c.name)}&limit=20&sort=title&order=asc`)));
-    rows.forEach((r, i) => root.append(shelf(cats[i].name, r.items, `#/library?category=${enc(cats[i].name)}&sort=title&order=asc`)));
-    const rated = await api("/books?sort=rating&order=desc&limit=12");
-    const top = rated.items.filter((b) => b.rating);
-    if (top.length) root.append(shelf("Your favourites", top));
-  },
+  recent(root, params, alive) { return VIEWS.library(root, params, alive, { recent: true }); },
 
-  async library(root, params, alive) {
+  async library(root, params, alive, opts = {}) {
+    const recent = !!opts.recent;
     const state = { q: params.get("q") || "", author: params.get("author") || "", category: params.get("category") || "",
       format: params.get("format") || "", tag: params.get("tag") || "", series: params.get("series") || "",
-      sort: params.get("sort") || (params.get("q") ? "title" : "added"), order: params.get("order") || (params.get("sort") || params.get("q") ? "asc" : "desc") };
+      sort: recent ? "added" : params.get("sort") || "title", order: recent ? "desc" : params.get("order") || "asc" };
+    const group = !recent && !state.q && !state.series && getPref("series", "on") !== "off";
     const facets = await api("/facets");
-    const set = (patch) => { const p = new URLSearchParams(); const s = { ...state, ...patch }; for (const [k, v] of Object.entries(s)) if (v) p.set(k, v); go("/library" + (p.size ? "?" + p : ""), true); };
-    const title = state.q ? `Results for “${state.q}”` : state.author || state.category || (state.tag && `#${state.tag}`) || state.series || "Library";
-    root.innerHTML = `<div class="page-head"><div><div class="eyebrow">${state.q ? "Search" : "Browse"}</div><h1 class="grad-text">${esc(title)}</h1><div class="muted small" id="count"></div></div></div>
+    const set = (patch) => { const p = new URLSearchParams(); const s = { ...state, ...patch }; for (const [k, v] of Object.entries(s)) if (v && !(recent && (k === "sort" || k === "order"))) p.set(k, v); go((recent ? "/recent" : "/library") + (p.size ? "?" + p : ""), true); };
+    const title = recent ? "Recently added" : state.q ? `Results for “${state.q}”` : state.author || state.category || (state.tag && `#${state.tag}`) || state.series || "Library";
+    root.innerHTML = `<div class="page-head"><div><div class="eyebrow">${recent ? "Newest first" : state.q ? "Search" : state.series ? "Series" : "Browse"}</div><h1 class="grad-text">${esc(title)}</h1><div class="muted small" id="count"></div></div></div>
       <div class="toolbar">
         <button class="chip ${state.format ? "" : "on"}" data-f="">All</button>
         ${facets.formats.map((f) => `<button class="chip ${state.format === f.name ? "on" : ""}" data-f="${esc(f.name)}">${esc(f.name)} <small>${f.count}</small></button>`).join("")}
@@ -147,14 +117,15 @@ const VIEWS = {
         <button class="btn sm" id="order" title="Toggle sort order">${state.order === "asc" ? "↑ Asc" : "↓ Desc"}</button>
       </div>
       <div class="toolbar" id="active"></div><div class="grid" id="grid"></div><div class="sentinel" id="more"></div>`;
+    if (recent) root.querySelectorAll("#sort, #order").forEach((e) => e.remove());
     const active = root.querySelector("#active");
     for (const k of ["author", "tag", "series"]) if (state[k]) active.insertAdjacentHTML("beforeend", `<button class="chip on" data-clear="${k}">${k}: ${esc(state[k])} ✕</button>`);
     if (!active.children.length) active.remove();
     root.querySelectorAll("[data-f]").forEach((b) => (b.onclick = () => set({ format: b.dataset.f })));
     root.querySelectorAll("[data-clear]").forEach((b) => (b.onclick = () => set({ [b.dataset.clear]: "" })));
     root.querySelector("#cat").onchange = (e) => set({ category: e.target.value });
-    root.querySelector("#sort").onchange = (e) => set({ sort: e.target.value, order: ["added", "size", "rating", "published"].includes(e.target.value) ? "desc" : "asc" });
-    root.querySelector("#order").onclick = () => set({ order: state.order === "asc" ? "desc" : "asc" });
+    if (!recent) root.querySelector("#sort").onchange = (e) => set({ sort: e.target.value, order: ["added", "size", "rating", "published"].includes(e.target.value) ? "desc" : "asc" });
+    if (!recent) root.querySelector("#order").onclick = () => set({ order: state.order === "asc" ? "desc" : "asc" });
 
     const grid = root.querySelector("#grid"), more = root.querySelector("#more"), count = root.querySelector("#count");
     let offset = 0, total = Infinity, loading = false;
@@ -163,12 +134,18 @@ const VIEWS = {
       loading = true;
       const p = new URLSearchParams({ limit: 60, offset, sort: state.sort, order: state.order });
       for (const k of ["q", "author", "category", "format", "tag", "series"]) if (state[k]) p.set(k, state[k]);
+      if (group) p.set("group_series", "true");
       const page = await api("/books?" + p);
       if (!alive()) return;
       total = page.total; offset += page.items.length;
       grid.append(...page.items.map(card));
-      count.textContent = `${total} book${total === 1 ? "" : "s"}`;
-      if (!total) grid.outerHTML = `<div class="empty"><h2>Nothing found</h2><p>Try a wildcard like <code>*${esc(state.q.replace(/\*/g, ""))}*</code> or a different filter.</p></div>`;
+      count.textContent = group ? `${total} item${total === 1 ? "" : "s"} · series grouped` : `${total} book${total === 1 ? "" : "s"}`;
+      if (!total) {
+        const filtered = state.q || state.author || state.category || state.format || state.tag || state.series;
+        grid.outerHTML = filtered
+          ? `<div class="empty"><h2>Nothing found</h2><p>Try a wildcard like <code>*${esc(state.q.replace(/\*/g, ""))}*</code> or a different filter.</p></div>`
+          : emptyState();
+      }
       loading = false;
     };
     new IntersectionObserver((en) => en[0].isIntersecting && load(), { rootMargin: "500px" }).observe(more);
