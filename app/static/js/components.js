@@ -1,0 +1,356 @@
+// Web components (light DOM, themed by app.css).
+import { api, esc, icon, toast, coverHTML, fmtBytes, emit } from "./api.js";
+
+const EXT_OK = new Set("epub pdf docx doc odt rtf txt md html htm mobi azw azw3 kfx fb2 djvu cbz cbr cb7 lit chm pdb zip".split(" "));
+const extOf = (n) => n.split(".").pop().toLowerCase();
+
+// ------------------------------------------------------------------ <mx-card>
+class MxCard extends HTMLElement {
+  set book(b) { this._b = b; this.dataset.id = b.id; this.render(); }
+  get book() { return this._b; }
+  connectedCallback() {
+    this.tabIndex = 0;
+    this.addEventListener("click", () => emit("open-book", this._b));
+    this.addEventListener("keydown", (e) => { if (e.key === "Enter") emit("open-book", this._b); });
+    document.addEventListener("book-updated", this._upd = (e) => { if (e.detail.id === this.dataset.id) this.book = e.detail; });
+  }
+  disconnectedCallback() { document.removeEventListener("book-updated", this._upd); }
+  render() {
+    const b = this._b;
+    this.innerHTML = `<div class="poster">${coverHTML(b)}<span class="fmt">${esc(b.format)}</span>
+      ${b.rating ? `<span class="stars">${"★".repeat(b.rating)}</span>` : ""}</div>
+      <div class="meta"><div class="t" title="${esc(b.title)}">${esc(b.title)}</div><div class="a">${esc(b.author || "Unknown author")}</div></div>`;
+  }
+}
+customElements.define("mx-card", MxCard);
+
+// ------------------------------------------------------------------ <mx-drawer>
+class MxDrawer extends HTMLElement {
+  connectedCallback() {
+    document.addEventListener("open-book", (e) => this.open(e.detail));
+    document.addEventListener("keydown", (e) => { if (e.key === "Escape" && this.classList.contains("open")) this.close(); });
+  }
+  async open(book) {
+    this.book = book;
+    this.classList.add("open");
+    this.render();
+    try { this.book = await api("/books/" + book.id, { quiet: true }); this.render(); } catch {}
+  }
+  close() { this.classList.remove("open"); this.innerHTML = ""; }
+
+  render() {
+    const b = this.book;
+    const prev = this.querySelector(".panel")?.scrollTop || 0;
+    const stars = (n) => [1, 2, 3, 4, 5].map((i) => `<button type="button" data-star="${i}" class="${i <= n ? "on" : ""}" aria-label="${i} stars">${icon("star")}</button>`).join("");
+    const st = b.storage;
+    const ext = "." + b.format;
+    const stem = b.filename.endsWith(ext) ? b.filename.slice(0, -ext.length) : b.filename;
+    this.innerHTML = `
+      <div class="scrim"></div>
+      <aside class="panel" role="dialog" aria-label="Book details">
+        <button class="btn sm close" aria-label="Close">${icon("x")}</button>
+        <div class="d-top">
+          <div class="poster">${coverHTML(b)}<span class="fmt">${esc(b.format)}</span></div>
+          <div>
+            <div class="eyebrow">${esc(b.category || "Uncategorized")}</div>
+            <h2>${esc(b.title)}</h2>
+            <div class="muted">${b.authors.length ? b.authors.map((a) => `<a href="#/library?author=${encodeURIComponent(a)}&sort=title&order=asc" data-nav>${esc(a)}</a>`).join(", ") : "Unknown author"}</div>
+            ${b.series ? `<div class="small muted">${esc(b.series)}${b.series_index != null ? " · #" + b.series_index : ""}</div>` : ""}
+            <div style="margin-top:10px;display:flex;gap:6px;flex-wrap:wrap">${b.tags.map((t) => `<a class="tag" href="#/library?tag=${encodeURIComponent(t)}" data-nav>${esc(t)}</a>`).join("")}</div>
+            <div class="actions">
+              <a class="btn primary" href="/api/books/${b.id}/download">${icon("download")}Download</a>
+              ${b.format === "pdf" ? `<a class="btn" target="_blank" rel="noopener" href="/api/books/${b.id}/download?inline=true">${icon("book")}Read</a>` : ""}
+              <button class="btn" data-act="cover">${icon("image")}Cover</button>
+              <input type="file" accept="image/*" hidden id="cover-in">
+            </div>
+          </div>
+        </div>
+
+        <section class="section">
+          <h3>Metadata</h3>
+          <form class="form" id="mform" autocomplete="off">
+            <label class="field full"><span>Title</span><input class="in" name="title" required value="${esc(b.title)}"></label>
+            <label class="field full"><span>Author(s) — separate with ;</span><input class="in" name="author" value="${esc(b.author)}"></label>
+            <label class="field"><span>Series</span><input class="in" name="series" value="${esc(b.series)}"></label>
+            <label class="field"><span>Series #</span><input class="in" name="series_index" type="number" step="any" value="${b.series_index ?? ""}"></label>
+            <label class="field"><span>Category</span><input class="in" name="category" list="cat-list" value="${esc(b.category)}"></label>
+            <label class="field"><span>Publisher</span><input class="in" name="publisher" value="${esc(b.publisher)}"></label>
+            <label class="field"><span>Published</span><input class="in" name="published" placeholder="YYYY or YYYY-MM-DD" value="${esc(b.published)}"></label>
+            <label class="field"><span>Language</span><input class="in" name="language" placeholder="en" value="${esc(b.language)}"></label>
+            <label class="field"><span>ISBN</span><input class="in" name="isbn" value="${esc(b.isbn)}"></label>
+            <div class="field"><span>Rating</span><div class="stars-in" id="stars">${stars(b.rating || 0)}</div></div>
+            <label class="field full"><span>Tags — comma separated</span><input class="in" name="tags" value="${esc(b.tags.join(", "))}"></label>
+            <label class="field full"><span>Description</span><textarea class="in" name="description">${esc(b.description)}</textarea></label>
+            <div class="full" style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
+              <div class="storage">
+                ${st.embedded.length ? `<span class="muted">In file:</span>${st.embedded.map((f) => `<span class="pill in">${f}</span>`).join("")}` : ""}
+                ${st.sidecar.length ? `<span class="muted">In ${esc(st.sidecar_file || "sidecar")}:</span>${st.sidecar.map((f) => `<span class="pill side">${f}</span>`).join("")}` : ""}
+              </div>
+              <button class="btn primary" type="submit">${icon("save")}Save metadata</button>
+            </div>
+          </form>
+          <datalist id="cat-list"></datalist>
+        </section>
+
+        <section class="section">
+          <h3>File</h3>
+          <p class="small muted" style="margin-top:-4px">The file name is independent of the title — renaming one never changes the other.</p>
+          <form class="inline" id="rform"><input class="in" name="filename" value="${esc(stem)}" aria-label="File name"><span class="ext">${esc(ext)}</span><button class="btn" type="submit">Rename file</button></form>
+          <dl class="kv" style="margin-top:16px">
+            <dt>Size</dt><dd>${fmtBytes(b.size)}</dd>
+            <dt>UUID</dt><dd><code>${b.id}</code></dd>
+            <dt>MD5</dt><dd><code>${b.md5}</code></dd>
+            <dt>Stored at</dt><dd><code>${esc(b.path)}</code></dd>
+            ${b.source_path ? `<dt>Uploaded as</dt><dd>${esc(b.source_path)}</dd>` : ""}
+            <dt>Added</dt><dd>${new Date(b.added_at).toLocaleString()}</dd>
+          </dl>
+        </section>
+
+        <section class="section"><h3>Danger zone</h3><button class="btn danger" data-act="delete">${icon("trash")}Delete book</button></section>
+      </aside>`;
+    this.querySelector(".panel").scrollTop = prev;
+    this.fillCategories();
+    this.bind();
+  }
+
+  async fillCategories() {
+    try {
+      const f = await api("/facets", { quiet: true });
+      const dl = this.querySelector("#cat-list");
+      if (dl) dl.innerHTML = f.categories.filter((c) => c.name !== "Uncategorized").map((c) => `<option value="${esc(c.name)}">`).join("");
+    } catch {}
+  }
+
+  bind() {
+    const b = this.book;
+    this.querySelector(".scrim").onclick = this.querySelector(".close").onclick = () => this.close();
+    this.querySelectorAll("[data-nav]").forEach((a) => a.addEventListener("click", () => this.close()));
+    let rating = b.rating || 0;
+    const stars = this.querySelector("#stars");
+    stars.onclick = (e) => {
+      const i = Number(e.target.closest("[data-star]")?.dataset.star);
+      if (!i) return;
+      rating = rating === i ? 0 : i;
+      stars.querySelectorAll("button").forEach((s, k) => s.classList.toggle("on", k < rating));
+    };
+    this.querySelector("#mform").onsubmit = async (e) => {
+      e.preventDefault();
+      const f = new FormData(e.target);
+      const body = Object.fromEntries(f.entries());
+      body.series_index = body.series_index === "" ? null : Number(body.series_index);
+      body.rating = rating;
+      body.tags = body.tags.split(",").map((t) => t.trim()).filter(Boolean);
+      const btn = e.submitter || e.target.querySelector("[type=submit]"); btn.disabled = true;
+      try {
+        this.book = await api("/books/" + b.id, { method: "PATCH", json: body });
+        const s = this.book.storage;
+        toast(`Saved · ${s.embedded.length ? "written into the file" : "stored in sidecar"}${s.embedded.length && s.sidecar.length ? " + sidecar" : ""}`);
+        emit("book-updated", this.book);
+        this.render();
+      } catch {} finally { btn.disabled = false; }
+    };
+    this.querySelector("#rform").onsubmit = async (e) => {
+      e.preventDefault();
+      try {
+        this.book = await api(`/books/${b.id}/rename`, { json: { filename: e.target.filename.value } });
+        toast("File renamed — title unchanged");
+        emit("book-updated", this.book);
+        this.render();
+      } catch {}
+    };
+    const cin = this.querySelector("#cover-in");
+    this.querySelector('[data-act="cover"]').onclick = () => cin.click();
+    cin.onchange = async () => {
+      if (!cin.files[0]) return;
+      const fd = new FormData(); fd.append("file", cin.files[0]);
+      try {
+        this.book = await api(`/books/${b.id}/cover`, { method: "PUT", body: fd });
+        emit("book-updated", this.book); this.render(); toast("Cover updated");
+      } catch {}
+    };
+    this.querySelector('[data-act="delete"]').onclick = async () => {
+      if (!confirm(`Delete “${b.title}” and its files permanently?`)) return;
+      try {
+        await api("/books/" + b.id, { method: "DELETE" });
+        this.close(); toast("Book deleted"); emit("library-changed");
+      } catch {}
+    };
+  }
+}
+customElements.define("mx-drawer", MxDrawer);
+
+// ------------------------------------------------------------------ <mx-upload>
+async function walkEntry(entry, path = "") {
+  if (entry.isFile) return new Promise((res) => entry.file((file) => res([{ file, rel: path + entry.name, folder: !!path }]), () => res([])));
+  const reader = entry.createReader();
+  const kids = [];
+  for (;;) {
+    const batch = await new Promise((res) => reader.readEntries(res, () => res([])));
+    if (!batch.length) break;
+    kids.push(...batch);
+  }
+  const out = [];
+  for (const k of kids) out.push(...(await walkEntry(k, path + entry.name + "/")));
+  return out;
+}
+
+class MxUpload extends HTMLElement {
+  connectedCallback() { this.queue = []; this.render(); }
+  open(items = []) { this.classList.add("open"); if (items.length) this.add(items); }
+  close() { if (this.busy) return; this.classList.remove("open"); this.queue = []; this.render(); }
+
+  async addFromDataTransfer(dt) {
+    const entries = [...dt.items].map((i) => i.webkitGetAsEntry?.()).filter(Boolean);
+    const out = [];
+    if (entries.length) for (const e of entries) out.push(...(await walkEntry(e)));
+    else for (const f of dt.files) out.push({ file: f, rel: f.name, folder: false });
+    this.open(out);
+  }
+
+  add(items) {
+    for (const it of items) {
+      if (it.file.name.startsWith(".")) continue;
+      if (!EXT_OK.has(extOf(it.file.name))) { this.ignored = (this.ignored || 0) + 1; continue; }
+      this.queue.push(it);
+    }
+    this.render();
+  }
+
+  render() {
+    const n = this.queue.length;
+    const size = this.queue.reduce((s, i) => s + i.file.size, 0);
+    this.innerHTML = `<div class="scrim" style="position:absolute;inset:0;background:rgba(2,2,10,.6);backdrop-filter:blur(4px)"></div>
+      <div class="dialog glass" role="dialog" aria-label="Add books">
+        <h2>Add books</h2>
+        <div class="muted small">EPUB, PDF, DOCX, MOBI, AZW3, FB2, TXT, CBZ … and .zip archives. Duplicates (same MD5) are skipped automatically.</div>
+        <div class="drop" id="drop">
+          <div style="font-size:15px"><b>Drag &amp; drop</b> files or whole folders here</div>
+          <div class="row">
+            <button class="btn" id="pick-files">${icon("book")}Choose files</button>
+            <button class="btn" id="pick-folder">${icon("folder")}Choose folder</button>
+          </div>
+          <input type="file" id="in-files" multiple hidden>
+          <input type="file" id="in-folder" webkitdirectory directory multiple hidden>
+        </div>
+        <div class="opts">
+          <label class="field"><span>Category for loose files (optional)</span><input class="in" id="cat" list="up-cats" placeholder="e.g. Science Fiction"></label>
+          <datalist id="up-cats"></datalist>
+          <label class="check"><input type="checkbox" id="fold" checked><span>Use folder names as categories for folder uploads</span></label>
+        </div>
+        <div id="status" style="margin-top:14px">
+          ${n ? `<div class="counts"><span class="tag">${n} book file${n > 1 ? "s" : ""} · ${fmtBytes(size)}</span>${this.ignored ? `<span class="pill">${this.ignored} non-book files ignored</span>` : ""}</div>` : ""}
+        </div>
+        <div class="dialog-actions">
+          <button class="btn" id="cancel">${this.done ? "Close" : "Cancel"}</button>
+          <button class="btn primary" id="go" ${n ? "" : "disabled"}>${icon("upload")}Upload${n ? " " + n : ""}</button>
+        </div>
+      </div>`;
+    this.bind();
+  }
+
+  bind() {
+    const $ = (s) => this.querySelector(s);
+    $(".scrim").onclick = $("#cancel").onclick = () => { this.done = false; this.close(); };
+    $("#pick-files").onclick = () => $("#in-files").click();
+    $("#pick-folder").onclick = () => $("#in-folder").click();
+    $("#in-files").onchange = (e) => this.add([...e.target.files].map((f) => ({ file: f, rel: f.name, folder: false })));
+    $("#in-folder").onchange = (e) => this.add([...e.target.files].map((f) => ({ file: f, rel: f.webkitRelativePath || f.name, folder: true })));
+    const drop = $("#drop");
+    drop.ondragover = (e) => { e.preventDefault(); drop.classList.add("over"); };
+    drop.ondragleave = () => drop.classList.remove("over");
+    drop.ondrop = (e) => { e.preventDefault(); e.stopPropagation(); drop.classList.remove("over"); this.addFromDataTransfer(e.dataTransfer); };
+    api("/facets", { quiet: true }).then((f) => {
+      const dl = $("#up-cats");
+      if (dl) dl.innerHTML = f.categories.filter((c) => c.name !== "Uncategorized").map((c) => `<option value="${esc(c.name)}">`).join("");
+    }).catch(() => {});
+    $("#go").onclick = () => this.start();
+  }
+
+  async start() {
+    const $ = (s) => this.querySelector(s);
+    const category = $("#cat").value.trim();
+    const useFolders = $("#fold").checked;
+    const items = this.queue.slice();
+    this.busy = true;
+    $("#go").disabled = true; $("#cancel").disabled = true;
+    const total = items.length;
+    const tally = { created: 0, duplicate: 0, skipped: 0, error: 0 };
+    const issues = [];
+    let sent = 0;
+    const status = $("#status");
+    const paint = () => {
+      status.innerHTML = `<div class="progress"><i style="width:${(sent / total) * 100}%"></i></div>
+        <div class="muted small">${sent} / ${total} processed</div>
+        <div class="counts"><span class="pill in">${tally.created} added</span><span class="pill">${tally.duplicate} duplicates</span><span class="pill">${tally.skipped} skipped</span><span class="pill side">${tally.error} errors</span></div>
+        ${issues.length ? `<div class="log">${issues.slice(0, 300).map((i) => `<div><em>${i.status}</em><span>${esc(i.filename)}${i.detail ? " — " + esc(i.detail) : ""}</span></div>`).join("")}</div>` : ""}`;
+    };
+    // Batches bounded by count and size; a few in flight at once.
+    const batches = [];
+    let cur = [], curSize = 0;
+    for (const it of items) {
+      if (cur.length && (cur.length >= 12 || curSize + it.file.size > 80 * 1024 * 1024)) { batches.push(cur); cur = []; curSize = 0; }
+      cur.push(it); curSize += it.file.size;
+    }
+    if (cur.length) batches.push(cur);
+    let next = 0;
+    const worker = async () => {
+      while (next < batches.length) {
+        const batch = batches[next++];
+        const fd = new FormData();
+        const folderBatch = batch.some((b) => b.folder || b.rel.includes("/"));
+        for (const it of batch) { fd.append("files", it.file, it.file.name); if (folderBatch) fd.append("relative_paths", it.rel); }
+        if (category) fd.append("category", category);
+        if (folderBatch) fd.append("category_from_folders", useFolders);
+        try {
+          const rep = await api(folderBatch ? "/books/upload-folder" : "/books/upload", { method: "POST", body: fd, quiet: true });
+          for (const r of rep.results) { tally[r.status] = (tally[r.status] || 0) + 1; if (r.status !== "created") issues.push(r); }
+        } catch (e) {
+          tally.error += batch.length;
+          issues.push({ status: "error", filename: `${batch.length} files`, detail: e.message });
+        }
+        sent += batch.length;
+        paint();
+      }
+    };
+    paint();
+    await Promise.all([worker(), worker(), worker()]);
+    this.busy = false; this.done = true; this.queue = [];
+    $("#cancel").disabled = false; $("#cancel").textContent = "Close";
+    toast(`${tally.created} added · ${tally.duplicate} duplicates skipped`, tally.error ? "err" : "ok");
+    emit("library-changed");
+  }
+}
+customElements.define("mx-upload", MxUpload);
+
+// ------------------------------------------------------------------ <mx-export>
+class MxExport extends HTMLElement {
+  async open() {
+    this.classList.add("open");
+    const [stats, f] = await Promise.all([api("/stats"), api("/facets")]);
+    this.innerHTML = `<div class="scrim" style="position:absolute;inset:0;background:rgba(2,2,10,.6);backdrop-filter:blur(4px)"></div>
+      <div class="dialog glass" role="dialog" aria-label="Export library">
+        <h2>Export library</h2>
+        <div class="muted small">${stats.books} books · ${fmtBytes(stats.bytes)} · downloaded as a single ZIP</div>
+        <div class="radios">
+          <label class="radio"><input type="radio" name="g" value="category" checked><b>By category</b><span class="small muted">${stats.categories} folders</span></label>
+          <label class="radio"><input type="radio" name="g" value="author"><b>By author</b><span class="small muted">${stats.authors} folders</span></label>
+        </div>
+        <div class="opts">
+          <label class="field"><span>Only this format</span><select class="in" id="fmt"><option value="">All formats</option>${f.formats.map((x) => `<option value="${esc(x.name)}">${esc(x.name)} (${x.count})</option>`).join("")}</select></label>
+          <label class="check"><input type="checkbox" id="meta" checked><span>Include metadata sidecars (*-info.json)</span></label>
+        </div>
+        <div class="dialog-actions"><button class="btn" id="cancel">Cancel</button><button class="btn primary" id="go">${icon("download")}Download ZIP</button></div>
+      </div>`;
+    const $ = (s) => this.querySelector(s);
+    $(".scrim").onclick = $("#cancel").onclick = () => this.close();
+    $("#go").onclick = () => {
+      const p = new URLSearchParams({ group_by: this.querySelector("input[name=g]:checked").value, include_metadata: $("#meta").checked });
+      if ($("#fmt").value) p.set("format", $("#fmt").value);
+      if (!stats.books) return toast("The library is empty", "err");
+      window.location.href = "/api/export?" + p;
+      this.close();
+    };
+  }
+  close() { this.classList.remove("open"); this.innerHTML = ""; }
+}
+customElements.define("mx-export", MxExport);

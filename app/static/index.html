@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en" data-theme="aurora">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Meridian — Ebook Library</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0' stop-color='%237c5cff'/%3E%3Cstop offset='1' stop-color='%2322d3ee'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='32' height='32' rx='9' fill='url(%23g)'/%3E%3Cpath d='M9 22V10l7 8 7-8v12' fill='none' stroke='white' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/static/css/app.css">
+</head>
+<body>
+<div class="aurora" aria-hidden="true"><i></i><i></i><i></i></div>
+
+<div class="shell">
+  <aside class="rail">
+    <a class="brand" href="#/"><span class="logo"></span><b>Meridian</b></a>
+    <nav id="nav">
+      <a href="#/" data-route="home"></a>
+      <a href="#/library" data-route="library"></a>
+      <a href="#/authors" data-route="authors"></a>
+      <a href="#/categories" data-route="categories"></a>
+      <a href="#/tools" data-route="tools"></a>
+    </nav>
+    <div class="rail-foot">
+      <div class="themes" id="themes" title="Theme"></div>
+      <div class="muted small" id="rail-stats"></div>
+      <a class="small muted" href="/docs" target="_blank" rel="noopener">API · Swagger ↗</a>
+    </div>
+  </aside>
+
+  <div class="main">
+    <header class="topbar">
+      <form class="search glass" id="search-form" role="search" autocomplete="off">
+        <span class="ico" data-icon="search"></span>
+        <input id="search" type="search" placeholder="Search metadata — try  author:tolk*  title:&quot;*ring*&quot;  -audio" aria-label="Search">
+        <kbd>/</kbd>
+        <button type="button" class="help" id="search-help" aria-label="Search syntax">?</button>
+      </form>
+      <button class="btn ghost" id="btn-export"><span data-icon="download"></span><span class="lbl">Export</span></button>
+      <button class="btn primary" id="btn-upload"><span data-icon="upload"></span><span class="lbl">Add books</span></button>
+    </header>
+    <main id="view" tabindex="-1"></main>
+  </div>
+</div>
+
+<mx-drawer id="drawer"></mx-drawer>
+<mx-upload id="upload"></mx-upload>
+<mx-export id="export"></mx-export>
+<div class="dropveil" id="dropveil"><div>Drop books or folders to add them</div></div>
+<div id="toasts" aria-live="polite"></div>
+
+<script type="module" src="/static/js/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,10 @@
+.git
+.devdata
+data
+import
+tests
+__pycache__
+*.pyc
+.pytest_cache
+.venv
+README.md

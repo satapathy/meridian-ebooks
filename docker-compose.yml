@@ -1,0 +1,13 @@
+services:
+  meridian:
+    build: .
+    image: meridian-ebooks:latest
+    container_name: meridian
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./data:/data            # library files + SQLite database (back this up)
+      - ./import:/import:ro     # optional: drop books here, then use Tools > Import
+    environment:
+      MAX_ARCHIVE_BYTES: "8589934592"   # cap for an expanded .zip upload (8 GiB)
+    restart: unless-stopped
