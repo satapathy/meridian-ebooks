@@ -38,7 +38,47 @@ docker compose up --build
 * Swagger: <http://localhost:8000/docs> (ReDoc at `/redoc`)
 * Data lives in the data folder (`./data` by default: library files + `meridian.db`). Optional `./import` is mounted read-only at `/import` for server-side imports.
 
-### Raspberry Pi
+### Raspberry Pi: start automatically on boot
+
+`docker-compose.yml` already has `restart: unless-stopped`, so once Docker itself starts at boot, Meridian comes back by itself. One-time setup on the Pi:
+
+```bash
+# 1. Install Docker (skip if `docker --version` already works) and let your user run it without sudo
+curl -fsSL https://get.docker.com | sudo sh
+sudo usermod -aG docker "$USER"        # log out and back in afterwards
+
+# 2. Start Docker at boot (the installer usually does this already)
+sudo systemctl enable --now docker containerd
+
+# 3. Get the project onto the Pi and prepare the data folder (see "Setting up the data folder")
+cd ~/meridian-ebooks
+mkdir -p data import
+echo "MERIDIAN_UID=$(id -u)" >> .env
+echo "MERIDIAN_GID=$(id -g)" >> .env
+
+# 4. Build and start in the background (-d), so it is not tied to your terminal
+docker compose up --build -d
+```
+
+Check it: `docker compose ps` should show `meridian` as `running (healthy)`, and the UI is at `http://<pi-address>:8000/` (find the address with `hostname -I`).
+
+Test the boot behaviour with `sudo reboot`, then after a minute or two open the UI again.
+
+Useful commands (run in the project folder):
+
+| Task | Command |
+|---|---|
+| Logs | `docker compose logs -f` |
+| Stop / start | `docker compose stop` / `docker compose start` |
+| Update after pulling new code | `docker compose up --build -d` |
+| Remove the container (data is kept in `./data`) | `docker compose down` |
+
+Notes:
+* A container you stopped yourself with `docker compose stop` stays stopped after a reboot (that is what `unless-stopped` means). Use `docker compose start` to bring it back.
+* Keep `data` on the SD card only for light use. For a big library, mount a USB drive or SSD (e.g. at `/mnt/books`), `chown` it to your user, and set `MERIDIAN_DATA=/mnt/books/meridian` in `.env`. Make sure the drive is mounted at boot (an `/etc/fstab` entry with the `nofail` option) so Docker doesn't start the container against an empty folder.
+* `docker` works without `sudo` only after the `usermod` step and a fresh login.
+
+### Raspberry Pi: 32-bit vs 64-bit OS
 
 A 64-bit OS (`uname -m` prints `aarch64`) is recommended. On 32-bit Raspberry Pi OS (`armv7l`) PyMuPDF has no prebuilt package, so the image builds without it: everything works, but PDFs get no embedded metadata, no first-page cover (a generated cover is shown) and metadata edits for PDFs go to the `-info.json` sidecar.
 
