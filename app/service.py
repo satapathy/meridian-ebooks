@@ -166,49 +166,51 @@ def ingest(tmp_path: Path, original_name: str, *, source_path: str | None = None
             return {"status": "duplicate", "filename": original_name,
                     "book_id": dup["id"], "detail": f"Same content as '{dup['title']}'"}
 
-        book_id = uuid.uuid4().hex
-        bdir = book_dir(book_id)
-        bdir.mkdir(parents=True, exist_ok=False)
-        filename = safe_filename(original_name, ext)
-        dest = bdir / filename
-        try:
-            shutil.move(str(tmp_path), dest)
-            meta, cover = md.read_metadata(dest, ext)
-            title = meta.get("title") or md.title_from_filename(filename)
-            tags = meta.get("tags") or []
-            category = (category or meta.get("category") or "").strip()
-            has_cover = 0
-            if cover:
-                jpeg = md.make_cover_jpeg(cover)
-                if jpeg:
-                    (bdir / "cover.jpg").write_bytes(jpeg)
-                    has_cover = 1
-            embedded = sorted(f for f in md.EMBEDDABLE.get(ext, set()) if _nonempty(meta.get(f)))
-            ts = now()
-            row = {
-                "id": book_id, "title": title, "subtitle": "", "author": "; ".join(split_authors(meta.get("author", ""))),
-                "publisher": meta.get("publisher", ""), "description": meta.get("description", ""),
-                "language": meta.get("language", ""), "published": meta.get("published", ""),
-                "isbn": meta.get("isbn", ""), "tags": json.dumps(tags, ensure_ascii=False),
-                "category": category, "subcategory": "", "series": meta.get("series", ""),
-                "series_index": meta.get("series_index"), "rating": None,
-                "format": ext, "filename": filename, "rel_dir": uuid_to_rel_dir(book_id),
-                "size": dest.stat().st_size, "md5": digest, "current_md5": digest,
-                "has_cover": has_cover, "embedded": json.dumps(embedded),
-                "source_path": source_path, "added_at": ts, "updated_at": ts,
-            }
-            cols = ",".join(row)
-            with db() as conn:
-                conn.execute(f"INSERT INTO books ({cols}) VALUES ({','.join('?' * len(row))})", list(row.values()))
-            book = dict(row, tags=tags)
-            _write_sidecar(book, set(embedded))
-        except sqlite3.IntegrityError:  # lost a race with an identical concurrent upload
-            remove_book_dir(book_id)
-            return {"status": "duplicate", "filename": original_name, "detail": "Same content already uploaded"}
-        except Exception:
-            remove_book_dir(book_id)
-            raise
-        return {"status": "created", "filename": original_name, "book_id": book_id, "title": title}
+        # Hold the write lock until the row exists, so cleanup() can't mistake the half-built folder for an orphan.
+        with _write_lock:
+            book_id = uuid.uuid4().hex
+            bdir = book_dir(book_id)
+            bdir.mkdir(parents=True, exist_ok=False)
+            filename = safe_filename(original_name, ext)
+            dest = bdir / filename
+            try:
+                shutil.move(str(tmp_path), dest)
+                meta, cover = md.read_metadata(dest, ext)
+                title = meta.get("title") or md.title_from_filename(filename)
+                tags = meta.get("tags") or []
+                category = (category or meta.get("category") or "").strip()
+                has_cover = 0
+                if cover:
+                    jpeg = md.make_cover_jpeg(cover)
+                    if jpeg:
+                        (bdir / "cover.jpg").write_bytes(jpeg)
+                        has_cover = 1
+                embedded = sorted(f for f in md.EMBEDDABLE.get(ext, set()) if _nonempty(meta.get(f)))
+                ts = now()
+                row = {
+                    "id": book_id, "title": title, "subtitle": "", "author": "; ".join(split_authors(meta.get("author", ""))),
+                    "publisher": meta.get("publisher", ""), "description": meta.get("description", ""),
+                    "language": meta.get("language", ""), "published": meta.get("published", ""),
+                    "isbn": meta.get("isbn", ""), "tags": json.dumps(tags, ensure_ascii=False),
+                    "category": category, "subcategory": "", "series": meta.get("series", ""),
+                    "series_index": meta.get("series_index"), "rating": None,
+                    "format": ext, "filename": filename, "rel_dir": uuid_to_rel_dir(book_id),
+                    "size": dest.stat().st_size, "md5": digest, "current_md5": digest,
+                    "has_cover": has_cover, "embedded": json.dumps(embedded),
+                    "source_path": source_path, "added_at": ts, "updated_at": ts,
+                }
+                cols = ",".join(row)
+                with db() as conn:
+                    conn.execute(f"INSERT INTO books ({cols}) VALUES ({','.join('?' * len(row))})", list(row.values()))
+                book = dict(row, tags=tags)
+                _write_sidecar(book, set(embedded))
+            except sqlite3.IntegrityError:  # lost a race with an identical concurrent upload
+                remove_book_dir(book_id)
+                return {"status": "duplicate", "filename": original_name, "detail": "Same content already uploaded"}
+            except Exception:
+                remove_book_dir(book_id)
+                raise
+            return {"status": "created", "filename": original_name, "book_id": book_id, "title": title}
     finally:
         if tmp_path.exists():
             tmp_path.unlink()

@@ -43,3 +43,40 @@ def test_macos_junk_in_zip_is_not_imported(client):
     assert r.status_code == 200, r.text
     assert r.json()["summary"]["created"] == 1
     assert client.get("/api/books").json()["total"] == 1
+
+
+def test_export_by_author_never_uses_a_nameless_folder(client):
+    bid = _upload(client, "a.epub", make_epub(marker="x1"))["book_id"]
+    client.patch(f"/api/books/{bid}", json={"author": "..."})
+    r = client.get("/api/export", params={"group_by": "author"})
+    assert r.status_code == 200
+    names = zipfile.ZipFile(io.BytesIO(r.content)).namelist()
+    assert all(not n.startswith("/") for n in names), names
+    assert any(n.startswith("Unknown Author/") for n in names), names
+
+
+def test_cleanup_does_not_delete_a_book_that_is_being_ingested(client, monkeypatch):
+    import threading
+
+    from app import metadata as md
+    from app import service
+
+    real = md.read_metadata
+    outcome = {}
+
+    def slow_read(path, ext):
+        # cleanup(apply) starts while the new book's folder exists but its row doesn't yet
+        t = threading.Thread(target=lambda: outcome.update(service.cleanup(dry_run=False)))
+        t.start()
+        t.join(0.5)  # with the lock held by ingest it must still be waiting
+        outcome["thread"] = t
+        return real(path, ext)
+
+    monkeypatch.setattr(md, "read_metadata", slow_read)
+    res = _upload(client, "a.epub", make_epub(title="Racy", marker="race"))
+    outcome["thread"].join(10)
+    assert res["status"] == "created"
+    b = client.get(f"/api/books/{res['book_id']}")
+    assert b.status_code == 200
+    assert client.get(f"/api/books/{res['book_id']}/download").status_code == 200
+    assert outcome["orphan_folders_removed"] == []

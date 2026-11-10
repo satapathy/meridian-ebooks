@@ -14,7 +14,8 @@ _STORED = {"epub", "pdf", "docx", "cbz", "azw3", "mobi", "odt"}  # already compr
 def _folder_for(row, group_by: str) -> str:
     if group_by == "author":
         authors = split_authors(row["author"])
-        return sanitize_component(authors[0], 100) if authors else "Unknown Author"
+        # a name made only of punctuation sanitises to "" - never produce a nameless (root-level) folder
+        return (sanitize_component(authors[0], 100) if authors else "") or "Unknown Author"
     return sanitize_component(row["category"], 100) or "Uncategorized"
 
 
