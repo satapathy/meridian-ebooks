@@ -84,15 +84,22 @@ export const emit = (name, detail) => document.dispatchEvent(new CustomEvent(nam
 
 // ---- user preferences (theme, cover borders), persisted per browser
 export const THEMES = {
+  vanilla: ["Vanilla", "linear-gradient(135deg,#ffffff,#d9d9de)"],
   aurora: ["Aurora", "linear-gradient(135deg,#7c5cff,#22d3ee)"],
   neon: ["Neon", "linear-gradient(135deg,#2dff9a,#00e0ff)"],
+  sunset: ["Sunset", "linear-gradient(135deg,#ff6a3d,#ff3d81)"],
+  ocean: ["Ocean", "linear-gradient(135deg,#1e90ff,#00d4c8)"],
+  emerald: ["Emerald", "linear-gradient(135deg,#2fb37a,#e0c25a)"],
+  cyber: ["Cyber", "linear-gradient(135deg,#ff2bd6,#00f0ff)"],
   paper: ["Paper", "linear-gradient(135deg,#f4f1ea,#c2410c)"],
+  blossom: ["Blossom", "linear-gradient(135deg,#ffd6e2,#e0457b)"],
+  lavender: ["Lavender", "linear-gradient(135deg,#e9e3fb,#7c3aed)"],
 };
 export function getPref(k, d) { try { return localStorage.getItem("mx-" + k) ?? d; } catch { return d; } }
 export function setPref(k, v) { try { localStorage.setItem("mx-" + k, v); } catch {} applyPrefs(); }
 export function applyPrefs() {
-  const t = getPref("theme", "aurora");
-  document.documentElement.dataset.theme = THEMES[t] ? t : "aurora";
+  const t = getPref("theme", "vanilla");
+  document.documentElement.dataset.theme = THEMES[t] ? t : "vanilla";
   const bw = Math.max(0, Math.min(16, Number(getPref("border", "6")) || 0));
   document.documentElement.style.setProperty("--bw", bw + "px");
   document.documentElement.dataset.border = bw ? "on" : "off";

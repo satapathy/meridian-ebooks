@@ -1,7 +1,7 @@
 // Web components (light DOM, themed by app.css).
 import { api, esc, icon, toast, coverHTML, fmtBytes, emit, THEMES, getPref, setPref } from "./api.js";
 
-const EXT_OK = new Set("epub pdf docx doc odt rtf txt md html htm mobi azw azw3 kfx fb2 djvu cbz cbr cb7 lit chm pdb zip".split(" "));
+const EXT_OK = new Set("epub pdf docx doc odt rtf txt md html htm mobi azw azw3 kfx fb2 djvu cbz cbr cb7 lit chm pdb zip json".split(" "));
 const extOf = (n) => n.split(".").pop().toLowerCase();
 
 // ------------------------------------------------------------------ <mx-card>
@@ -60,7 +60,8 @@ class MxDrawer extends HTMLElement {
             <div class="actions">
               <a class="btn primary" href="/api/books/${b.id}/download">${icon("download")}Download</a>
               ${b.format === "pdf" ? `<a class="btn" target="_blank" rel="noopener" href="/api/books/${b.id}/download?inline=true">${icon("book")}Read</a>` : ""}
-              <button class="btn" data-act="cover">${icon("image")}Cover</button>
+              <button class="btn" data-act="cover">${icon("image")}${b.cover_source === "user" ? "Replace cover" : "Upload cover"}</button>
+              ${b.cover_source === "user" ? `<button class="btn" data-act="uncover" title="Go back to the cover embedded in the book">Remove custom cover</button>` : ""}
               <input type="file" accept="image/*" hidden id="cover-in">
             </div>
           </div>
@@ -166,8 +167,12 @@ class MxDrawer extends HTMLElement {
       const fd = new FormData(); fd.append("file", cin.files[0]);
       try {
         this.book = await api(`/books/${b.id}/cover`, { method: "PUT", body: fd });
-        emit("book-updated", this.book); this.render(); toast("Cover updated");
+        emit("book-updated", this.book); this.render(); toast("Cover saved next to the book - it now overrides the embedded cover");
       } catch {}
+    };
+    const un = this.querySelector('[data-act="uncover"]');
+    if (un) un.onclick = async () => {
+      try { this.book = await api(`/books/${b.id}/cover`, { method: "DELETE" }); emit("book-updated", this.book); this.render(); toast("Custom cover removed"); } catch {}
     };
     this.querySelector('[data-act="delete"]').onclick = async () => {
       if (!confirm(`Delete “${b.title}” and its files permanently?`)) return;
@@ -223,7 +228,7 @@ class MxUpload extends HTMLElement {
     this.innerHTML = `<div class="scrim" style="position:absolute;inset:0;background:rgba(2,2,10,.6);backdrop-filter:blur(4px)"></div>
       <div class="dialog glass" role="dialog" aria-label="Add books">
         <h2>Add books</h2>
-        <div class="muted small">EPUB, PDF, DOCX, MOBI, AZW3, FB2, TXT, CBZ … and .zip archives. Duplicates (same MD5) are skipped automatically.</div>
+        <div class="muted small">EPUB, PDF, DOCX, MOBI, AZW3, FB2, TXT, CBZ … .zip archives and metadata <code>.json</code> files. Duplicates (same MD5) are skipped; books are always added before JSON files are applied.</div>
         <div class="drop" id="drop">
           <div style="font-size:15px"><b>Drag &amp; drop</b> files or whole folders here</div>
           <div class="row">
@@ -237,6 +242,7 @@ class MxUpload extends HTMLElement {
           <label class="field"><span>Category for loose files (optional)</span><input class="in" id="cat" list="up-cats" placeholder="e.g. Science Fiction"></label>
           <datalist id="up-cats"></datalist>
           <label class="check"><input type="checkbox" id="fold" checked><span>Use folder names as categories for folder uploads</span></label>
+          <label class="check"><input type="checkbox" id="ovw"><span>Let imported JSON overwrite existing metadata that differs <span class="muted">(otherwise you get a warning with the differences)</span></span></label>
         </div>
         <div id="status" style="margin-top:14px">
           ${n ? `<div class="counts"><span class="tag">${n} book file${n > 1 ? "s" : ""} · ${fmtBytes(size)}</span>${this.ignored ? `<span class="pill">${this.ignored} non-book files ignored</span>` : ""}</div>` : ""}
@@ -271,53 +277,64 @@ class MxUpload extends HTMLElement {
     const $ = (s) => this.querySelector(s);
     const category = $("#cat").value.trim();
     const useFolders = $("#fold").checked;
+    const overwrite = $("#ovw").checked;
     const items = this.queue.slice();
     this.busy = true;
     $("#go").disabled = true; $("#cancel").disabled = true;
     const total = items.length;
-    const tally = { created: 0, duplicate: 0, skipped: 0, error: 0 };
+    const tally = { created: 0, duplicate: 0, updated: 0, warning: 0, skipped: 0, error: 0 };
     const issues = [];
     let sent = 0;
     const status = $("#status");
+    const fmtVal = (v) => (Array.isArray(v) ? v.join(", ") : v ?? "") || "∅";
     const paint = () => {
       status.innerHTML = `<div class="progress"><i style="width:${(sent / total) * 100}%"></i></div>
         <div class="muted small">${sent} / ${total} processed</div>
-        <div class="counts"><span class="pill in">${tally.created} added</span><span class="pill">${tally.duplicate} duplicates</span><span class="pill">${tally.skipped} skipped</span><span class="pill side">${tally.error} errors</span></div>
-        ${issues.length ? `<div class="log">${issues.slice(0, 300).map((i) => `<div><em>${i.status}</em><span>${esc(i.filename)}${i.detail ? " — " + esc(i.detail) : ""}</span></div>`).join("")}</div>` : ""}`;
+        <div class="counts"><span class="pill in">${tally.created} added</span><span class="pill in">${tally.updated} metadata updated</span><span class="pill">${tally.duplicate} duplicates</span><span class="pill">${tally.skipped} skipped</span><span class="pill side">${tally.warning} warnings</span><span class="pill side">${tally.error} errors</span></div>
+        ${issues.length ? `<div class="log">${issues.slice(0, 300).map((i) => `<div class="${i.status}"><em>${i.status}</em><span>${esc(i.filename)}${i.title ? " → “" + esc(i.title) + "”" : ""}${i.detail ? " — " + esc(i.detail) : ""}${
+          i.status === "warning" && i.diffs ? `<ul class="diffs">${i.diffs.map((d) => `<li><b>${esc(d.field)}</b>: <s>${esc(fmtVal(d.current))}</s> → ${esc(fmtVal(d.imported))}</li>`).join("")}</ul>` : ""}</span></div>`).join("")}</div>` : ""}`;
     };
-    // Batches bounded by count and size; a few in flight at once.
-    const batches = [];
-    let cur = [], curSize = 0;
-    for (const it of items) {
-      if (cur.length && (cur.length >= 12 || curSize + it.file.size > 80 * 1024 * 1024)) { batches.push(cur); cur = []; curSize = 0; }
-      cur.push(it); curSize += it.file.size;
-    }
-    if (cur.length) batches.push(cur);
-    let next = 0;
-    const worker = async () => {
-      while (next < batches.length) {
-        const batch = batches[next++];
-        const fd = new FormData();
-        const folderBatch = batch.some((b) => b.folder || b.rel.includes("/"));
-        for (const it of batch) { fd.append("files", it.file, it.file.name); if (folderBatch) fd.append("relative_paths", it.rel); }
-        if (category) fd.append("category", category);
-        if (folderBatch) fd.append("category_from_folders", useFolders);
-        try {
-          const rep = await api(folderBatch ? "/books/upload-folder" : "/books/upload", { method: "POST", body: fd, quiet: true });
-          for (const r of rep.results) { tally[r.status] = (tally[r.status] || 0) + 1; if (r.status !== "created") issues.push(r); }
-        } catch (e) {
-          tally.error += batch.length;
-          issues.push({ status: "error", filename: `${batch.length} files`, detail: e.message });
-        }
-        sent += batch.length;
-        paint();
+    // Batches bounded by count and size. Books go first; metadata JSON files only after every book is in.
+    const makeBatches = (list) => {
+      const out = []; let cur = [], curSize = 0;
+      for (const it of list) {
+        if (cur.length && (cur.length >= 12 || curSize + it.file.size > 80 * 1024 * 1024)) { out.push(cur); cur = []; curSize = 0; }
+        cur.push(it); curSize += it.file.size;
       }
+      if (cur.length) out.push(cur);
+      return out;
     };
+    const runPhase = async (batches, workers) => {
+      let next = 0;
+      const worker = async () => {
+        while (next < batches.length) {
+          const batch = batches[next++];
+          const fd = new FormData();
+          const folderBatch = batch.some((b) => b.folder || b.rel.includes("/"));
+          for (const it of batch) { fd.append("files", it.file, it.file.name); if (folderBatch) fd.append("relative_paths", it.rel); }
+          if (category) fd.append("category", category);
+          if (folderBatch) fd.append("category_from_folders", useFolders);
+          fd.append("overwrite_json", overwrite);
+          try {
+            const rep = await api(folderBatch ? "/books/upload-folder" : "/books/upload", { method: "POST", body: fd, quiet: true });
+            for (const r of rep.results) { tally[r.status] = (tally[r.status] || 0) + 1; if (r.status !== "created") issues.push(r); }
+          } catch (e) {
+            tally.error += batch.length;
+            issues.push({ status: "error", filename: `${batch.length} files`, detail: e.message });
+          }
+          sent += batch.length;
+          paint();
+        }
+      };
+      await Promise.all(Array.from({ length: workers }, worker));
+    };
+    const isJson = (it) => extOf(it.file.name) === "json";
     paint();
-    await Promise.all([worker(), worker(), worker()]);
+    await runPhase(makeBatches(items.filter((i) => !isJson(i))), 3);   // 1) books
+    await runPhase(makeBatches(items.filter(isJson)), 1);               // 2) metadata JSON
     this.busy = false; this.done = true; this.queue = [];
     $("#cancel").disabled = false; $("#cancel").textContent = "Close";
-    toast(`${tally.created} added · ${tally.duplicate} duplicates skipped`, tally.error ? "err" : "ok");
+    toast(`${tally.created} added · ${tally.updated} metadata updated${tally.warning ? " · " + tally.warning + " warnings" : ""}`, tally.error || tally.warning ? "err" : "ok");
     emit("library-changed");
   }
 }
@@ -361,7 +378,7 @@ class MxSettings extends HTMLElement {
   open() { this.classList.add("open"); this.render(); }
   close() { this.classList.remove("open"); this.innerHTML = ""; }
   render() {
-    const theme = getPref("theme", "aurora"), bw = Math.max(0, Math.min(16, Number(getPref("border", "6")) || 0));
+    const theme = getPref("theme", "vanilla"), bw = Math.max(0, Math.min(16, Number(getPref("border", "6")) || 0));
     this.innerHTML = `<div class="scrim" style="position:absolute;inset:0;background:rgba(2,2,10,.6);backdrop-filter:blur(4px)"></div>
       <div class="dialog glass" role="dialog" aria-label="Settings">
         <h2>Settings</h2>

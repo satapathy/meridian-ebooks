@@ -218,6 +218,7 @@ const VIEWS = {
         <h2>Import from server folder</h2>
         <p class="muted">Recursively import books from the server's import directory (mounted at <code>/import</code> in Docker).</p>
         <div class="inline"><input class="in" id="ipath" placeholder="Sub-folder (blank = everything)"><button class="btn primary" id="imp">${icon("folder")}Import</button></div>
+        <label class="check" style="margin-top:10px"><input type="checkbox" id="iovw"><span>Let JSON files overwrite existing metadata that differs <span class="muted">(books are imported first, then JSON)</span></span></label>
         <div id="iprog"></div>
       </section>
       <section class="glass" style="padding:22px">
@@ -240,13 +241,13 @@ const VIEWS = {
     root.querySelector("#imp").onclick = async () => {
       const box = root.querySelector("#iprog");
       try {
-        let job = await api("/import", { json: { path: root.querySelector("#ipath").value.trim(), category_from_folders: true } });
+        let job = await api("/import", { json: { path: root.querySelector("#ipath").value.trim(), category_from_folders: true, overwrite_json: root.querySelector("#iovw").checked } });
         while (job.status !== "done") {
           box.innerHTML = `<div class="progress"><i style="width:${job.total ? (job.processed / job.total) * 100 : 5}%"></i></div><div class="muted small">${job.processed} / ${job.total || "?"} · ${job.summary.created} added · ${job.summary.duplicate} duplicates</div>`;
           await new Promise((r) => setTimeout(r, 900));
           job = await api("/import/" + job.id);
         }
-        box.innerHTML = `<div class="counts"><span class="pill in">${job.summary.created} added</span><span class="pill">${job.summary.duplicate} duplicates</span><span class="pill">${job.summary.skipped} skipped</span><span class="pill side">${job.summary.error} errors</span></div>`;
+        box.innerHTML = `<div class="counts"><span class="pill in">${job.summary.created} added</span><span class="pill in">${job.summary.updated} metadata updated</span><span class="pill">${job.summary.duplicate} duplicates</span><span class="pill side">${job.summary.warning} warnings</span><span class="pill">${job.summary.skipped} skipped</span><span class="pill side">${job.summary.error} errors</span></div>`;
         toast(`Import finished: ${job.summary.created} added`); refreshRail();
       } catch {}
     };

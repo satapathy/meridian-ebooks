@@ -16,7 +16,7 @@ from .db import db
 from .search import parse_query
 from .storage import (
     book_dir, prune_empty_parents, remove_book_dir, safe_filename, sanitize_component,
-    sidecar_name, uuid_to_rel_dir,
+    sidecar_name, user_cover_name, uuid_to_rel_dir,
 )
 
 log = logging.getLogger("meridian.service")
@@ -77,6 +77,8 @@ def to_book(row: sqlite3.Row) -> dict:
         "sidecar": sorted(sidecar_fields),
         "sidecar_file": sc.name if sc.exists() else None,
     }
+    d["cover_source"] = ("user" if (book_dir(d["id"]) / user_cover_name(d["filename"])).exists()
+                         else "embedded" if d["has_cover"] else None)
     d["path"] = f"{d['rel_dir']}/{d['filename']}"
     d.pop("current_md5", None)
     d.pop("rel_dir", None)
@@ -102,8 +104,15 @@ def book_file(book_id: str) -> Path:
 
 
 def cover_file(book_id: str) -> Path | None:
-    p = book_dir(book_id) / "cover.jpg"
-    return p if p.exists() else None
+    """The cover to display: a user-uploaded one wins over the one extracted from the book."""
+    with db() as conn:
+        row = conn.execute("SELECT filename FROM books WHERE id=?", (book_id,)).fetchone()
+    if not row:
+        return None
+    for p in (book_dir(book_id) / user_cover_name(row["filename"]), book_dir(book_id) / "cover.jpg"):
+        if p.exists():
+            return p
+    return None
 
 
 # --------------------------------------------------------------------------- sidecar + persistence
@@ -268,6 +277,9 @@ def rename_file(book_id: str, new_name: str) -> dict:
         if (bdir / new).exists():
             raise Conflict(f"A file named '{new}' already exists")
         os.replace(bdir / old, bdir / new)
+        old_cv, new_cv = bdir / user_cover_name(old), bdir / user_cover_name(new)
+        if old_cv.exists():
+            os.replace(old_cv, new_cv)
         old_sc, new_sc = bdir / sidecar_name(old), bdir / sidecar_name(new)
         if old_sc.exists():
             os.replace(old_sc, new_sc)
@@ -282,13 +294,24 @@ def rename_file(book_id: str, new_name: str) -> dict:
 
 
 def replace_cover(book_id: str, data: bytes) -> dict:
-    jpeg = md.make_cover_jpeg(data)
+    """Store a user cover next to the book/JSON. It overrides the embedded cover for display."""
+    jpeg = md.make_cover_jpeg(data, max_height=1400)
     if not jpeg:
         raise BadRequest("Could not read that image")
     with _write_lock, db() as conn:
-        _get_row(conn, book_id)
-        (book_dir(book_id) / "cover.jpg").write_bytes(jpeg)
+        row = _get_row(conn, book_id)
+        (book_dir(book_id) / user_cover_name(row["filename"])).write_bytes(jpeg)
         conn.execute("UPDATE books SET has_cover=1, updated_at=? WHERE id=?", (now(), book_id))
+        return to_book(_get_row(conn, book_id))
+
+
+def remove_user_cover(book_id: str) -> dict:
+    """Drop the user cover; the book falls back to its embedded cover (or a generated one)."""
+    with _write_lock, db() as conn:
+        row = _get_row(conn, book_id)
+        (book_dir(book_id) / user_cover_name(row["filename"])).unlink(missing_ok=True)
+        has = 1 if (book_dir(book_id) / "cover.jpg").exists() else 0
+        conn.execute("UPDATE books SET has_cover=?, updated_at=? WHERE id=?", (has, now(), book_id))
         return to_book(_get_row(conn, book_id))
 
 
@@ -449,3 +472,93 @@ def cleanup(dry_run: bool = True) -> dict:
                     shutil.rmtree(leaf, ignore_errors=True)
                     prune_empty_parents(leaf.parent)
     return report
+
+
+# --------------------------------------------------------------------------- sidecar JSON import
+def _find_books_for_sidecar(conn, payload: dict, fields: dict, name: str, rel_path: str | None) -> list:
+    """Candidate books for an imported JSON: id, then title, then file-name stem."""
+    json_stem = os.path.splitext(os.path.basename(name))[0]
+    if json_stem.lower().endswith("-info"):
+        json_stem = json_stem[:-5]
+    file_stem = os.path.splitext(str(payload.get("file") or ""))[0] or json_stem
+    title = str(fields.get("title") or payload.get("title") or "").strip()
+
+    rows: list = []
+    bid = payload.get("id")
+    if isinstance(bid, str) and bid:
+        r = conn.execute("SELECT * FROM books WHERE id=?", (bid,)).fetchone()
+        rows = [r] if r else []
+    if not rows and title:
+        rows = conn.execute("SELECT * FROM books WHERE lower(title)=lower(?)", (title,)).fetchall()
+    if not rows:
+        rows = [r for r in conn.execute(
+            "SELECT * FROM books WHERE lower(filename) LIKE ? ESCAPE '\\'", (_escape_like(file_stem.lower()) + ".%",)
+        ) if os.path.splitext(r["filename"])[0].lower() == file_stem.lower()]
+    if not rows:
+        rows = conn.execute("SELECT * FROM books WHERE lower(title)=lower(?)", (json_stem,)).fetchall()
+
+    if len(rows) > 1:  # disambiguate: same folder as the JSON, then same file-name stem
+        folder = os.path.dirname(rel_path or "")
+        same_dir = [r for r in rows if r["source_path"] and os.path.dirname(r["source_path"]) == folder]
+        rows = same_dir or rows
+    if len(rows) > 1:
+        same_stem = [r for r in rows if os.path.splitext(r["filename"])[0].lower() == file_stem.lower()]
+        rows = same_stem or rows
+    return rows
+
+
+def import_sidecar(raw: bytes, name: str, *, rel_path: str | None = None, overwrite: bool = False) -> dict:
+    """Apply an uploaded metadata JSON to the book it belongs to.
+
+    Fields the book has no value for are filled in. If the JSON would *change* an existing value the
+    import is refused with a warning listing the differences, unless overwrite=True."""
+    label = rel_path or name
+    try:
+        payload = json.loads(raw.decode("utf-8-sig"))
+    except Exception:
+        return {"status": "error", "filename": label, "detail": "Not valid JSON"}
+    if not isinstance(payload, dict):
+        return {"status": "error", "filename": label, "detail": "JSON must be an object"}
+    meta = payload["metadata"] if isinstance(payload.get("metadata"), dict) else payload
+    fields = {k: meta[k] for k in md.FIELDS if k in meta}
+    if not fields:
+        return {"status": "skipped", "filename": label, "detail": "No book metadata fields in this JSON"}
+    try:
+        changes = _normalise_patch(fields)
+    except (BadRequest, ValueError, TypeError) as exc:
+        return {"status": "error", "filename": label, "detail": f"Invalid metadata: {exc}"}
+
+    with db() as conn:
+        rows = _find_books_for_sidecar(conn, payload, fields, name, rel_path)
+    if not rows:
+        return {"status": "skipped", "filename": label, "detail": "No book with a matching title found"}
+    if len(rows) > 1:
+        return {"status": "error", "filename": label,
+                "detail": f"Ambiguous: {len(rows)} books match - add an \"id\" to the JSON"}
+    row = rows[0]
+    current = to_book(row)
+
+    diffs = []
+    for k, new in changes.items():
+        old = row[k]
+        if k == "tags":
+            same = json.loads(old or "[]") == json.loads(new)
+        else:
+            same = (old if old is not None else "") == (new if new is not None else "")
+        if not same:
+            diffs.append({"field": k, "current": current[k],
+                          "imported": json.loads(new) if k == "tags" else new})
+    base = {"filename": label, "book_id": row["id"], "title": row["title"], "diffs": diffs}
+    if not diffs:
+        return {**base, "status": "skipped", "detail": "Identical to the book's existing metadata"}
+    # A category that was only inferred from the upload folder name is not a user-set value.
+    parts = [p for p in (row["source_path"] or "").replace("\\", "/").split("/") if p]
+    auto_category = parts[-2] if len(parts) >= 2 else None
+    conflicts = [d["field"] for d in diffs
+                 if _nonempty(d["current"]) and not (d["field"] == "category" and d["current"] == auto_category)]
+    if conflicts and not overwrite:
+        return {**base, "status": "warning",
+                "detail": f"Metadata already exists and differs ({', '.join(conflicts)}) - not applied"}
+    update_book(row["id"], {d["field"]: fields[d["field"]] for d in diffs})
+    return {**base, "status": "updated",
+            "detail": f"Applied {len(diffs)} field(s)" + (" (overwrote existing)" if conflicts else "")}

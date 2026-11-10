@@ -315,6 +315,11 @@ def make_cover_jpeg(data: bytes, max_height: int = 600) -> bytes | None:
         from PIL import Image
 
         img = Image.open(io.BytesIO(data))
+        if img.mode in ("RGBA", "LA", "P"):  # flatten transparency onto white
+            img = img.convert("RGBA")
+            bg = Image.new("RGB", img.size, (255, 255, 255))
+            bg.paste(img, mask=img.split()[-1])
+            img = bg
         img = img.convert("RGB")
         if img.height > max_height:
             img = img.resize((max(1, round(img.width * max_height / img.height)), max_height), Image.LANCZOS)

@@ -178,3 +178,95 @@ def test_migration_adds_subcategory_column(client):
     con = sqlite3.connect(settings.db_path)
     assert "subcategory" in {r[1] for r in con.execute("PRAGMA table_info(books)")}
     con.close()
+
+
+def test_json_import_matching_diffs_overwrite_and_ordering(client):
+    upload(client, "dune.epub", make_epub(title="Dune", author="Frank Herbert", marker="d"))
+    bid = client.get("/api/books", params={"q": "dune"}).json()["items"][0]["id"]
+
+    def imp(name, payload, **form):
+        r = client.post("/api/books/upload", files=[("files", (name, json.dumps(payload).encode()))], data=form)
+        assert r.status_code == 200, r.text
+        return r.json()["results"][0]
+
+    # matched by title; empty fields are filled in without any warning
+    r = imp("dune-info.json", {"metadata": {"title": "Dune", "category": "SciFi", "rating": 5}})
+    assert r["status"] == "updated" and r["book_id"] == bid
+    assert client.get(f"/api/books/{bid}").json()["category"] == "SciFi"
+
+    # existing differing value: warning with diffs, nothing applied
+    r = imp("dune-info.json", {"metadata": {"title": "Dune", "category": "Classics"}})
+    assert r["status"] == "warning"
+    assert r["diffs"] == [{"field": "category", "current": "SciFi", "imported": "Classics"}]
+    assert client.get(f"/api/books/{bid}").json()["category"] == "SciFi"
+    # identical -> nothing to do
+    assert imp("x.json", {"metadata": {"title": "Dune", "category": "SciFi"}})["status"] == "skipped"
+    # explicit overwrite applies it
+    assert imp("dune-info.json", {"metadata": {"title": "Dune", "category": "Classics"}},
+               overwrite_json="true")["status"] == "updated"
+    assert client.get(f"/api/books/{bid}").json()["category"] == "Classics"
+
+    # unmatched / invalid
+    assert imp("nope.json", {"metadata": {"title": "No Such Book", "category": "x"}})["status"] == "skipped"
+    bad = client.post("/api/books/upload", files=[("files", ("bad.json", b"{oops"))]).json()["results"][0]
+    assert bad["status"] == "error"
+
+    # folder upload: JSON listed *before* its book is still applied, because books go first
+    sidecar = json.dumps({"metadata": {"title": "The Hobbit", "subcategory": "Epic"}}).encode()
+    files = [("files", ("hobbit-info.json", sidecar)),
+             ("files", ("hobbit.epub", make_epub(title="The Hobbit", marker="h")))]
+    rep = client.post("/api/books/upload-folder", files=files,
+                      data={"relative_paths": ["Lib/hobbit-info.json", "Lib/hobbit.epub"]}).json()
+    assert [r["status"] for r in rep["results"]] == ["created", "updated"]
+    assert client.get("/api/books", params={"q": "hobbit"}).json()["items"][0]["subcategory"] == "Epic"
+
+
+def test_json_overrides_folder_derived_category_without_warning(client):
+    files = [("files", ("b.epub", make_epub(title="Folder Book", marker="fb"))),
+             ("files", ("b-info.json", json.dumps({"metadata": {"title": "Folder Book", "category": "Real"}}).encode()))]
+    rep = client.post("/api/books/upload-folder", files=files,
+                      data={"relative_paths": ["Lib/b.epub", "Lib/b-info.json"]}).json()
+    assert [r["status"] for r in rep["results"]] == ["created", "updated"]
+    assert client.get("/api/books").json()["items"][0]["category"] == "Real"
+
+
+def _png(color, size=(120, 80)):
+    from PIL import Image
+    buf = io.BytesIO()
+    Image.new("RGB", size, color).save(buf, "PNG")
+    return buf.getvalue()
+
+
+def test_user_cover_overrides_embedded_and_lives_next_to_json(client):
+    from PIL import Image
+    bid = upload(client, "doc.pdf", make_pdf(marker="cov"))["book_id"]
+    b = client.get(f"/api/books/{bid}").json()
+    assert b["cover_source"] == "embedded"
+    embedded = client.get(f"/api/books/{bid}/cover").content
+
+    b = client.put(f"/api/books/{bid}/cover", files={"file": ("c.png", _png((250, 0, 0)))}).json()
+    assert b["cover_source"] == "user" and b["has_cover"]
+    folder = (settings.library_dir / b["path"]).parent
+    assert (folder / "doc-cover.jpg").is_file() and (folder / "cover.jpg").is_file()  # both kept
+    served = client.get(f"/api/books/{bid}/cover").content
+    assert served != embedded
+    px = Image.open(io.BytesIO(served)).getpixel((10, 10))
+    assert px[0] > 200 and px[1] < 60  # the red user cover is what is shown
+
+    # follows a file rename; exported next to the sidecar
+    client.post(f"/api/books/{bid}/rename", json={"filename": "renamed"})
+    assert (folder / "renamed-cover.jpg").is_file() and not (folder / "doc-cover.jpg").exists()
+    names = zipfile.ZipFile(io.BytesIO(client.get("/api/export").content)).namelist()
+    assert "Uncategorized/renamed-cover.jpg" in names
+
+    # removing it falls back to the embedded cover
+    b = client.delete(f"/api/books/{bid}/cover").json()
+    assert b["cover_source"] == "embedded" and client.get(f"/api/books/{bid}/cover").content == embedded
+
+    # a book with no embedded cover: user cover, then removal -> no cover at all
+    tid = upload(client, "t.txt", b"x")["book_id"]
+    assert client.get(f"/api/books/{tid}").json()["cover_source"] is None
+    client.put(f"/api/books/{tid}/cover", files={"file": ("c.png", _png((0, 0, 255)))})
+    assert client.delete(f"/api/books/{tid}/cover").json()["has_cover"] is False
+    assert client.get(f"/api/books/{tid}/cover").status_code == 404
+    assert client.put(f"/api/books/{tid}/cover", files={"file": ("bad.png", b"nope")}).status_code == 400

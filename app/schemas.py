@@ -31,6 +31,7 @@ class Book(BaseModel):
     size: int
     md5: str = Field(description="MD5 of the file as first uploaded (duplicate key)")
     has_cover: bool
+    cover_source: Optional[str] = Field(None, description="user (uploaded, stored next to the book) | embedded (from the book file) | null")
     source_path: Optional[str] = Field(None, description="Original relative path for folder uploads")
     added_at: str
     updated_at: str
@@ -67,10 +68,11 @@ class RenameFile(BaseModel):
 
 class UploadResult(BaseModel):
     filename: str
-    status: str = Field(description="created | duplicate | skipped | error")
+    status: str = Field(description="created | duplicate | skipped | error | updated (JSON applied) | warning (JSON differs from existing metadata, not applied)")
     book_id: Optional[str] = None
     title: Optional[str] = None
     detail: Optional[str] = None
+    diffs: Optional[list[dict]] = Field(None, description="For JSON imports: field, current and imported values that differ")
 
 
 class UploadReport(BaseModel):
@@ -93,6 +95,7 @@ class Facets(BaseModel):
 class ImportRequest(BaseModel):
     path: str = Field("", description="Folder inside the server's import directory ('' = the whole import dir)")
     category_from_folders: bool = True
+    overwrite_json: bool = Field(False, description="Let imported JSON files overwrite existing metadata that differs")
 
 
 class ImportJob(BaseModel):

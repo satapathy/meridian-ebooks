@@ -6,7 +6,7 @@ from pathlib import Path
 from .config import settings
 from .db import db
 from .service import split_authors
-from .storage import book_dir, sanitize_component, sidecar_name
+from .storage import book_dir, sanitize_component, sidecar_name, user_cover_name
 
 _STORED = {"epub", "pdf", "docx", "cbz", "azw3", "mobi", "odt"}  # already compressed
 
@@ -56,4 +56,7 @@ def build_export(group_by: str, *, ids: list[str] | None = None, fmt: str | None
                 sc = book_dir(row["id"]) / sidecar_name(row["filename"])
                 if sc.exists():
                     z.write(sc, arc.rpartition(".")[0] + "-info.json", compress_type=zipfile.ZIP_DEFLATED)
+                uc = book_dir(row["id"]) / user_cover_name(row["filename"])
+                if uc.exists():
+                    z.write(uc, arc.rpartition(".")[0] + "-cover.jpg", compress_type=zipfile.ZIP_STORED)
     return out, count

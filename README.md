@@ -44,6 +44,8 @@ docker compose up --build
 |---|---|
 | Upload EPUB, PDF, DOCX, MOBI, AZW3, FB2, TXT, CBZ… | `POST /api/books/upload` (see `app/config.py` for the full list) |
 | Upload whole folders recursively | `POST /api/books/upload-folder` takes files plus their relative paths (the UI uses the browser directory picker or drag-and-drop of folders). `.zip` archives are expanded recursively. `POST /api/import` imports a folder already on the server. Folder names can become categories. |
+| Import metadata JSON | Upload `*.json` (e.g. an exported `book-name-info.json`) alone, in a folder, in a `.zip`, or from the server import folder. It is matched to the book by `id`, then title (case-insensitive), then file name, and applied to that book. **Books are always processed before JSON files** (the UI uploads every book first, then the JSONs). Empty fields are filled in; if the JSON would change a value the book already has, nothing is applied and you get a `warning` listing each field's current vs. imported value. Tick "overwrite" (`overwrite_json=true`) to apply anyway. A category that was merely inferred from the upload folder name does not count as an existing value. |
+| Replace the cover | `PUT /api/books/{id}/cover` (or "Upload cover" in the book panel). Saved as `book-name-cover.jpg` in the book's folder, next to `book-name-info.json`, and always shown instead of the cover embedded in the book. The book file is untouched, the cover follows the file on rename and is included in the ZIP export. `DELETE /api/books/{id}/cover` reverts to the embedded cover. |
 | Plex-like browser | Home with hero + shelves, Library grid (format/category/sort filters, infinite scroll), Authors, Categories, generated covers when a book has none, detail drawer |
 | Metadata search with wildcards | `GET /api/books?q=…` - `*` and `?` wildcards, `author:`/`title:`/`tag:`/`category:`/`format:`/`series:`/`isbn:`/`lang:`/`year:`/`file:` scopes, `"phrases"`, `-exclusions`. Example: `author:tolk* title:"*ring*" -format:pdf` |
 | UUID per book + MD5 duplicate control | UUID4 assigned at upload. The MD5 of the upload is unique-indexed; identical content is rejected. The hash is kept even after metadata is written into a file, so the original is still recognised. `GET /api/duplicates` and `POST /api/cleanup` (dry-run by default) remove duplicates, orphan folders and dangling records. |
@@ -78,4 +80,4 @@ Layout: `app/service.py` (ingest, edit, search, cleanup), `app/metadata.py` (EPU
 ## Notes
 
 * No authentication is built in - put it behind a reverse proxy or VPN before exposing it.
-* The UI has three themes (Aurora, Neon, Paper), switchable from the sidebar.
+* The UI has ten themes, chosen in Settings (the sliders icon, top right) and saved per browser. **Vanilla** (white and light greys, the default) plus nine colourful ones: Aurora, Neon, Sunset, Ocean, Emerald, Cyber (dark) and Paper, Blossom, Lavender (light). Settings also controls the cover border thickness.

@@ -39,6 +39,11 @@ def sidecar_name(filename: str) -> str:
     return f"{os.path.splitext(filename)[0]}-info.json"
 
 
+def user_cover_name(filename: str) -> str:
+    """Cover chosen by the user; lives next to the book and its -info.json."""
+    return f"{os.path.splitext(filename)[0]}-cover.jpg"
+
+
 def prune_empty_parents(path: Path) -> None:
     """Remove now-empty ancestor folders up to (not including) the library root."""
     root = settings.library_dir

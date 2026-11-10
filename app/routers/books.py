@@ -66,7 +66,12 @@ def cover(book_id: str):
     return FileResponse(p, media_type="image/jpeg", headers={"Cache-Control": "public, max-age=300"})
 
 
-@router.put("/{book_id}/cover", response_model=Book, summary="Replace the cover image")
+@router.put(
+    "/{book_id}/cover", response_model=Book, summary="Upload a cover image (overrides the embedded cover)",
+    description="Stored as `<book-name>-cover.jpg` in the book's folder, next to the `-info.json` sidecar. "
+                "It takes precedence over any cover embedded in the book when thumbnails are shown, "
+                "and follows the file if it is renamed. The book file itself is not modified.",
+)
 def set_cover(book_id: str, file: UploadFile = File(...)):
     try:
         return service.replace_cover(book_id, file.file.read(15 * 1024 * 1024))
@@ -74,6 +79,14 @@ def set_cover(book_id: str, file: UploadFile = File(...)):
         raise HTTPException(404, "Book not found")
     except service.BadRequest as e:
         raise HTTPException(400, str(e))
+
+
+@router.delete("/{book_id}/cover", response_model=Book, summary="Remove the uploaded cover (revert to the embedded one)")
+def remove_cover(book_id: str):
+    try:
+        return service.remove_user_cover(book_id)
+    except service.BookNotFound:
+        raise HTTPException(404, "Book not found")
 
 
 @router.patch(

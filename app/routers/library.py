@@ -1,4 +1,5 @@
 import os
+import shutil
 import threading
 import uuid
 from datetime import datetime
@@ -80,24 +81,24 @@ def _resolve_import_path(rel: str) -> Path:
     return target
 
 
-def _run_import(job_id: str, root: Path, use_folders: bool) -> None:
+def _run_import(job_id: str, root: Path, use_folders: bool, overwrite: bool) -> None:
     job = _jobs[job_id]
-    files = [Path(d) / f for d, _, fs in os.walk(root) for f in fs]
+    # books and archives first, metadata JSON files last
+    files = sorted((Path(d) / f for d, _, fs in os.walk(root) for f in fs), key=lambda p: uploads.is_json(p.name))
     job["total"] = len(files)
     job["status"] = "running"
     results: list[dict] = []
     for p in files:
         rel = p.relative_to(root).as_posix()
         try:
-            tmp = uploads.new_tmp()
-            if service.is_supported(p.name) or p.suffix.lower() == ".zip":
-                import shutil
+            if service.is_supported(p.name) or uploads.is_json(p.name) or p.suffix.lower() == ".zip":
+                tmp = uploads.new_tmp()
                 shutil.copyfile(p, tmp)
                 if p.suffix.lower() == ".zip":
-                    r = uploads.expand_zip(tmp, p.name, rel, use_folders, None)
+                    r = uploads.expand_zip(tmp, p.name, rel, use_folders, None, overwrite)
                 else:
                     cat = uploads.category_from_path(f"{root.name}/{rel}") if use_folders else None
-                    r = [uploads.ingest_one(tmp, p.name, rel, cat)]
+                    r = [uploads.ingest_one(tmp, p.name, rel, cat, overwrite)]
             else:
                 r = [{"filename": rel, "status": "skipped"}]
         except Exception as exc:
@@ -105,14 +106,15 @@ def _run_import(job_id: str, root: Path, use_folders: bool) -> None:
         results += r
         job["processed"] += 1
         job["summary"] = uploads.summarise(results)
-        job["errors"] = [f"{x['filename']}: {x.get('detail', '')}" for x in results if x["status"] == "error"][:50]
+        job["errors"] = [f"{x['filename']}: {x.get('detail', '')}" for x in results if x["status"] in ("error", "warning")][:50]
     job["status"] = "done"
 
 
 @router.post(
     "/import", response_model=ImportJob, tags=["Upload"], summary="Import a folder that is already on the server",
     description="Recursively imports books from the server's import directory (the `/import` volume in Docker). "
-                "Runs in the background - poll `GET /import/{job_id}`.",
+                "Books are imported first, then metadata `*.json` files (see `POST /books/upload`). "
+                "Runs in the background - poll `GET /import/{job_id}`; `errors` also lists JSON warnings.",
 )
 def import_folder(body: ImportRequest, background: BackgroundTasks):
     root = _resolve_import_path(body.path)
@@ -120,7 +122,7 @@ def import_folder(body: ImportRequest, background: BackgroundTasks):
     with _jobs_lock:
         _jobs[job_id] = {"id": job_id, "status": "queued", "path": str(root), "total": 0, "processed": 0,
                          "summary": {k: 0 for k in uploads.SUMMARY_KEYS}, "errors": []}
-    background.add_task(_run_import, job_id, root, body.category_from_folders)
+    background.add_task(_run_import, job_id, root, body.category_from_folders, body.overwrite_json)
     return _jobs[job_id]
 
 
