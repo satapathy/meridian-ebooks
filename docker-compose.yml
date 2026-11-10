@@ -3,11 +3,15 @@ services:
     build: .
     image: meridian-ebooks:latest
     container_name: meridian
+    # Run as the user that owns the data folder (see README "Setting up the data folder").
+    user: "${MERIDIAN_UID:-1000}:${MERIDIAN_GID:-1000}"
     ports:
-      - "8000:8000"
+      - "${MERIDIAN_PORT:-8000}:8000"
     volumes:
-      - ./data:/data            # library files + SQLite database (back this up)
-      - ./import:/import:ro     # optional: drop books here, then use Tools > Import
+      # library files + SQLite database (back this up)
+      - ${MERIDIAN_DATA:-./data}:/data
+      # optional: drop books here, then use Tools > Import
+      - ${MERIDIAN_IMPORT:-./import}:/import:ro
     environment:
       MAX_ARCHIVE_BYTES: "8589934592"   # cap for an expanded .zip upload (8 GiB)
     restart: unless-stopped

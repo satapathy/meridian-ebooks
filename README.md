@@ -2,13 +2,41 @@
 
 A dockerized, self-hosted ebook library: FastAPI backend with a Swagger page, and a Plex-style browser UI.
 
+## Setting up the data folder
+
+The container runs as a non-root user (UID/GID 1000 by default) and must be able to write to the data folder.
+If the folder doesn't exist, Docker creates it owned by `root` and the app fails with
+`PermissionError: [Errno 13] Permission denied: '/data/library'`. Create it yourself first:
+
+```bash
+mkdir -p data import
+# Linux: make the folder writable by the user the container runs as
+sudo chown -R "$(id -u):$(id -g)" data
+```
+
+Then tell Docker which folder and user to use via a `.env` file next to `docker-compose.yml`
+(all values are optional; defaults shown):
+
+```bash
+MERIDIAN_DATA=./data        # any absolute or relative path, e.g. /srv/ebooks/data
+MERIDIAN_IMPORT=./import    # optional read-only folder for server-side imports
+MERIDIAN_UID=1000           # set to the output of `id -u`
+MERIDIAN_GID=1000           # set to the output of `id -g`
+MERIDIAN_PORT=8000
+```
+
+Or pass them inline: `MERIDIAN_DATA=/srv/ebooks MERIDIAN_UID=$(id -u) MERIDIAN_GID=$(id -g) docker compose up --build`.
+On Docker Desktop (Windows/macOS) permissions are usually not an issue.
+
+## Run
+
 ```bash
 docker compose up --build
 ```
 
 * Web UI: <http://localhost:8000/>
 * Swagger: <http://localhost:8000/docs> (ReDoc at `/redoc`)
-* Data lives in `./data` (library files + `meridian.db`). Optional `./import` is mounted read-only at `/import` for server-side imports.
+* Data lives in the data folder (`./data` by default: library files + `meridian.db`). Optional `./import` is mounted read-only at `/import` for server-side imports.
 
 ## Features
 
