@@ -93,5 +93,7 @@ export function setPref(k, v) { try { localStorage.setItem("mx-" + k, v); } catc
 export function applyPrefs() {
   const t = getPref("theme", "aurora");
   document.documentElement.dataset.theme = THEMES[t] ? t : "aurora";
-  document.documentElement.dataset.borders = getPref("borders", "on") === "off" ? "off" : "on";
+  const bw = Math.max(0, Math.min(16, Number(getPref("border", "6")) || 0));
+  document.documentElement.style.setProperty("--bw", bw + "px");
+  document.documentElement.dataset.border = bw ? "on" : "off";
 }

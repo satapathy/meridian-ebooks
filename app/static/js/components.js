@@ -52,7 +52,7 @@ class MxDrawer extends HTMLElement {
         <div class="d-top">
           <div class="poster">${coverHTML(b)}<span class="fmt">${esc(b.format)}</span></div>
           <div>
-            <div class="eyebrow">${esc(b.category || "Uncategorized")}</div>
+            <div class="eyebrow">${esc(b.category || "Uncategorized")}${b.subcategory ? " › " + esc(b.subcategory) : ""}</div>
             <h2>${esc(b.title)}</h2>
             <div class="muted">${b.authors.length ? b.authors.map((a) => `<a href="#/library?author=${encodeURIComponent(a)}&sort=title&order=asc" data-nav>${esc(a)}</a>`).join(", ") : "Unknown author"}</div>
             ${b.series ? `<div class="small muted">${esc(b.series)}${b.series_index != null ? " · #" + b.series_index : ""}</div>` : ""}
@@ -74,6 +74,7 @@ class MxDrawer extends HTMLElement {
             <label class="field"><span>Series</span><input class="in" name="series" value="${esc(b.series)}"></label>
             <label class="field"><span>Series #</span><input class="in" name="series_index" type="number" step="any" value="${b.series_index ?? ""}"></label>
             <label class="field"><span>Category</span><input class="in" name="category" list="cat-list" value="${esc(b.category)}"></label>
+            <label class="field"><span>Sub-category</span><input class="in" name="subcategory" value="${esc(b.subcategory)}"></label>
             <label class="field"><span>Publisher</span><input class="in" name="publisher" value="${esc(b.publisher)}"></label>
             <label class="field"><span>Published</span><input class="in" name="published" placeholder="YYYY or YYYY-MM-DD" value="${esc(b.published)}"></label>
             <label class="field"><span>Language</span><input class="in" name="language" placeholder="en" value="${esc(b.language)}"></label>
@@ -146,7 +147,7 @@ class MxDrawer extends HTMLElement {
         const s = this.book.storage;
         toast(`Saved · ${s.embedded.length ? "written into the file" : "stored in sidecar"}${s.embedded.length && s.sidecar.length ? " + sidecar" : ""}`);
         emit("book-updated", this.book);
-        this.render();
+        this.close();
       } catch {} finally { btn.disabled = false; }
     };
     this.querySelector("#rform").onsubmit = async (e) => {
@@ -360,7 +361,7 @@ class MxSettings extends HTMLElement {
   open() { this.classList.add("open"); this.render(); }
   close() { this.classList.remove("open"); this.innerHTML = ""; }
   render() {
-    const theme = getPref("theme", "aurora"), borders = getPref("borders", "on") !== "off";
+    const theme = getPref("theme", "aurora"), bw = Math.max(0, Math.min(16, Number(getPref("border", "6")) || 0));
     this.innerHTML = `<div class="scrim" style="position:absolute;inset:0;background:rgba(2,2,10,.6);backdrop-filter:blur(4px)"></div>
       <div class="dialog glass" role="dialog" aria-label="Settings">
         <h2>Settings</h2>
@@ -368,13 +369,14 @@ class MxSettings extends HTMLElement {
         <h3 style="font-size:13px;text-transform:uppercase;letter-spacing:.12em;color:var(--muted);margin-top:20px">Theme</h3>
         <div class="theme-grid">${Object.entries(THEMES).map(([k, [name, bg]]) =>
           `<button class="theme-opt" data-t="${k}" aria-pressed="${k === theme}"><i style="background:${bg}"></i>${name}</button>`).join("")}</div>
-        <div class="row-set"><div><b>Cover borders</b><div class="small muted">Draw a border around every book cover</div></div>
-          <button class="switch" role="switch" id="sw-borders" aria-checked="${borders}" aria-label="Cover borders"></button></div>
+        <div class="row-set" style="display:block"><div style="display:flex;justify-content:space-between"><div><b>Cover border</b><div class="small muted">White frame around every cover. 0 = no frame, cover stretched to fit (FitXY).</div></div><b id="bw-val">${bw}px</b></div>
+          <input type="range" id="bw" min="0" max="16" step="1" value="${bw}" style="width:100%;margin-top:12px;accent-color:var(--a1)" aria-label="Cover border thickness"></div>
         <div class="dialog-actions"><button class="btn primary" id="done">Done</button></div>
       </div>`;
     this.querySelector(".scrim").onclick = this.querySelector("#done").onclick = () => this.close();
     this.querySelectorAll("[data-t]").forEach((b) => (b.onclick = () => { setPref("theme", b.dataset.t); this.render(); }));
-    this.querySelector("#sw-borders").onclick = () => { setPref("borders", borders ? "off" : "on"); this.render(); };
+    const rng = this.querySelector("#bw");
+    rng.oninput = () => { setPref("border", rng.value); this.querySelector("#bw-val").textContent = rng.value + "px"; };
   }
 }
 customElements.define("mx-settings", MxSettings);

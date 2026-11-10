@@ -21,6 +21,7 @@ class Book(BaseModel):
     isbn: str
     tags: list[str]
     category: str
+    subcategory: str = Field(description="Optional second level under the category")
     series: str
     series_index: Optional[float]
     rating: Optional[int] = Field(description="0-5 stars")
@@ -54,6 +55,7 @@ class BookUpdate(BaseModel):
     isbn: Optional[str] = None
     tags: Optional[Union[list[str], str]] = Field(None, description="List, or comma separated string")
     category: Optional[str] = None
+    subcategory: Optional[str] = None
     series: Optional[str] = None
     series_index: Optional[float] = None
     rating: Optional[int] = Field(None, ge=0, le=5)

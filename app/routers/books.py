@@ -16,7 +16,7 @@ def list_books(
         None,
         description=(
             "Metadata search. Terms are AND-ed; `*` matches any run of characters, `?` one character. "
-            "Scope a term with `author:`, `title:`, `publisher:`, `tag:`, `category:`, `format:`, `series:`, "
+            "Scope a term with `author:`, `title:`, `publisher:`, `tag:`, `category:`, `subcategory:` (`sub:`), `format:`, `series:`, "
             "`isbn:`, `lang:`, `year:`, `file:`. Quote phrases, prefix `-` to exclude. "
             "Example: `author:tolk* title:\"*ring*\" -audio`"
         ),
@@ -25,6 +25,7 @@ def list_books(
     author: Optional[str] = Query(None, description="Exact author name"),
     category: Optional[str] = Query(None, description="Exact category ('Uncategorized' for none)"),
     format: Optional[str] = Query(None, description="File format, e.g. epub"),
+    subcategory: Optional[str] = Query(None, description="Exact sub-category"),
     tag: Optional[str] = None,
     series: Optional[str] = None,
     sort: Literal["title", "author", "added", "updated", "size", "published", "series", "format", "category", "rating"] = "added",
@@ -33,7 +34,7 @@ def list_books(
     offset: int = Query(0, ge=0),
 ):
     return service.list_books(q=q, author=author, category=category, fmt=format, tag=tag,
-                              series=series, sort=sort, order=order, limit=limit, offset=offset)
+                              series=series, subcategory=subcategory, sort=sort, order=order, limit=limit, offset=offset)
 
 
 @router.get("/{book_id}", response_model=Book, summary="Get one book")

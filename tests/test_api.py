@@ -155,5 +155,26 @@ def test_delete_prunes_folders(client):
 
 def test_query_parser():
     sql, params = parse_query('author:tolk* -"audio book"')
-    assert sql.count("LIKE") == 1 + 12 and sql.endswith(")") and "NOT" in sql
+    assert sql.count("LIKE") == 1 + len(__import__("app.search", fromlist=["x"]).ANY_FIELDS) and sql.endswith(")") and "NOT" in sql
     assert params[0] == "%tolk%%"
+
+
+def test_subcategory_edit_search_and_filter(client):
+    bid = upload(client, "a.epub", make_epub(marker="sub"), category="Fantasy")["book_id"]
+    b = client.patch(f"/api/books/{bid}", json={"subcategory": "Epic"}).json()
+    assert b["subcategory"] == "Epic" and "subcategory" in b["storage"]["sidecar"]
+    assert client.get("/api/books", params={"q": "sub:ep*"}).json()["total"] == 1
+    assert client.get("/api/books", params={"subcategory": "epic"}).json()["total"] == 1
+    assert client.get("/api/books", params={"subcategory": "other"}).json()["total"] == 0
+
+
+def test_migration_adds_subcategory_column(client):
+    import sqlite3
+    from app.db import init_db
+    con = sqlite3.connect(settings.db_path)
+    con.execute("ALTER TABLE books DROP COLUMN subcategory")
+    con.commit(); con.close()
+    init_db()
+    con = sqlite3.connect(settings.db_path)
+    assert "subcategory" in {r[1] for r in con.execute("PRAGMA table_info(books)")}
+    con.close()

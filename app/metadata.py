@@ -18,7 +18,7 @@ log = logging.getLogger("meridian.metadata")
 
 FIELDS = [
     "title", "author", "publisher", "description", "language", "published",
-    "isbn", "tags", "category", "series", "series_index", "rating",
+    "isbn", "tags", "category", "subcategory", "series", "series_index", "rating",
 ]
 
 # Fields each format can carry inside the file itself.

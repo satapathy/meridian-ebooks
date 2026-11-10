@@ -180,7 +180,7 @@ def ingest(tmp_path: Path, original_name: str, *, source_path: str | None = None
                 "publisher": meta.get("publisher", ""), "description": meta.get("description", ""),
                 "language": meta.get("language", ""), "published": meta.get("published", ""),
                 "isbn": meta.get("isbn", ""), "tags": json.dumps(tags, ensure_ascii=False),
-                "category": category, "series": meta.get("series", ""),
+                "category": category, "subcategory": "", "series": meta.get("series", ""),
                 "series_index": meta.get("series_index"), "rating": None,
                 "format": ext, "filename": filename, "rel_dir": uuid_to_rel_dir(book_id),
                 "size": dest.stat().st_size, "md5": digest, "current_md5": digest,
@@ -312,7 +312,7 @@ def _escape_like(s: str) -> str:
     return s.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
 
 
-def _where(q=None, author=None, category=None, fmt=None, tag=None, series=None) -> tuple[str, list]:
+def _where(q=None, author=None, category=None, fmt=None, tag=None, series=None, subcategory=None) -> tuple[str, list]:
     parts, params = [], []
     if q:
         sql, p = parse_query(q)
@@ -328,6 +328,9 @@ def _where(q=None, author=None, category=None, fmt=None, tag=None, series=None) 
         else:
             parts.append("category = ? COLLATE NOCASE")
             params.append(category)
+    if subcategory:
+        parts.append("subcategory = ? COLLATE NOCASE")
+        params.append(subcategory)
     if fmt:
         parts.append("format = ?")
         params.append(fmt.lower().lstrip("."))
@@ -340,9 +343,9 @@ def _where(q=None, author=None, category=None, fmt=None, tag=None, series=None) 
     return (" WHERE " + " AND ".join(parts)) if parts else "", params
 
 
-def list_books(*, q=None, author=None, category=None, fmt=None, tag=None, series=None,
+def list_books(*, q=None, author=None, category=None, fmt=None, tag=None, series=None, subcategory=None,
                sort="added", order="desc", limit=60, offset=0) -> dict:
-    where, params = _where(q, author, category, fmt, tag, series)
+    where, params = _where(q, author, category, fmt, tag, series, subcategory)
     col = SORTS.get(sort, SORTS["added"])
     direction = "ASC" if order.lower() == "asc" else "DESC"
     with db() as conn:

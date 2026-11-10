@@ -131,8 +131,7 @@ mx-card .a { color: var(--muted); font-size: 12.5px; white-space: nowrap; overfl
 mx-card:hover .poster::after { background-position: 150% 0; }
 
 mx-cover { display: block; width: 100%; height: 100%; }
-mx-cover { background: var(--glass-2); }
-mx-cover img { width: 100%; height: 100%; object-fit: contain; display: block; }
+mx-cover img { width: 100%; height: 100%; object-fit: fill; display: block; }
 mx-cover .gen { position: relative; width: 100%; height: 100%; padding: 16% 12% 12%; display: flex; flex-direction: column; justify-content: space-between; color: #fff; overflow: hidden;
   background: radial-gradient(circle at 85% 12%, hsl(var(--h2) 90% 62% / .55), transparent 45%), linear-gradient(160deg, hsl(var(--h) 62% 38%), hsl(var(--h2) 65% 17%)); }
 mx-cover .gen::before { content: ""; position: absolute; width: 90%; aspect-ratio: 1; border-radius: 50%; right: -35%; bottom: -20%; border: 1.5px solid rgba(255,255,255,.22); box-shadow: 0 0 0 14px rgba(255,255,255,.05), 0 0 0 30px rgba(255,255,255,.035); }
@@ -202,11 +201,13 @@ mx-drawer.open { display: block; }
 mx-upload, mx-export, mx-settings { position: fixed; inset: 0; z-index: 70; display: none; place-items: center; padding: 20px; }
 mx-upload.open, mx-export.open, mx-settings.open { display: grid; }
 
-/* Cover borders (Settings > Cover borders) */
-.poster, .collage > div { border: 0 solid transparent; }
-[data-borders="on"] .poster { border: 2px solid color-mix(in srgb, var(--a1) 60%, var(--line)); }
-[data-borders="on"] .collage > div { border: 1.5px solid color-mix(in srgb, var(--a1) 60%, var(--line)); }
-[data-borders="on"] mx-card:hover .poster { border-color: var(--a2); }
+/* Cover frame: --bw is the border thickness (Settings). 0 = bare cover stretched to fill (FitXY). */
+:root { --bw: 6px; }
+.poster { padding: var(--bw); background: #fff; }
+.collage > div { padding: calc(var(--bw) / 4); background: #fff; }
+:root[data-border="off"] .poster, :root[data-border="off"] .collage > div { padding: 0; background: none; }
+mx-cover { height: 100%; border-radius: calc(14px - var(--bw) / 2); overflow: hidden; }
+mx-card:hover .poster { box-shadow: 0 26px 50px -18px color-mix(in srgb, var(--a1) 70%, #000), 0 0 0 2px var(--a1); }
 
 /* Settings */
 .theme-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin: 8px 0 20px; }

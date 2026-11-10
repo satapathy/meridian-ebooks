@@ -15,6 +15,7 @@ CREATE TABLE IF NOT EXISTS books (
     isbn         TEXT NOT NULL DEFAULT '',
     tags         TEXT NOT NULL DEFAULT '[]', -- JSON array
     category     TEXT NOT NULL DEFAULT '',
+    subcategory  TEXT NOT NULL DEFAULT '',
     series       TEXT NOT NULL DEFAULT '',
     series_index REAL,
     rating       INTEGER,
@@ -61,3 +62,6 @@ def init_db() -> None:
     settings.ensure_dirs()
     with db() as conn:
         conn.executescript(SCHEMA)
+        cols = {r["name"] for r in conn.execute("PRAGMA table_info(books)")}
+        if "subcategory" not in cols:  # databases created before sub-categories existed
+            conn.execute("ALTER TABLE books ADD COLUMN subcategory TEXT NOT NULL DEFAULT ''")
