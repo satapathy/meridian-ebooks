@@ -221,11 +221,12 @@ mx-cover .gen span { font-size: 0.6875rem; opacity: .85; position: relative; tex
 .stat b { display: block; font: 600 1.25rem var(--font); }
 
 /* Authors / categories */
-.tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 16px; }
-.tile { padding: 18px; cursor: pointer; transition: .2s; display: flex; gap: 14px; align-items: center; }
+.tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(420px, 100%), 1fr)); gap: 16px; }
+.tile { padding: 18px 20px; height: 96px; min-width: 0; cursor: pointer; transition: .2s; display: flex; gap: 16px; align-items: center; }
+.tile > div:last-child { min-width: 0; flex: 1; }
 .tile:hover { transform: translateY(-3px); border-color: var(--a1); box-shadow: 0 16px 36px -18px var(--a1); }
 .avatar { flex: none; width: 52px; height: 52px; border-radius: 50%; display: grid; place-items: center; font: 600 1rem var(--font); color: #fff; background: linear-gradient(135deg, hsl(var(--h) 70% 50%), hsl(var(--h2) 70% 35%)); }
-.tile b { display: block; line-height: 1.25; overflow: hidden; text-overflow: ellipsis; }
+.tile b { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; line-height: 1.25; overflow: hidden; word-break: break-word; }
 .collage { flex: none; position: relative; width: 74px; height: 56px; }
 .collage > div { position: absolute; width: 38px; height: 56px; border-radius: 6px; overflow: hidden; box-shadow: 0 4px 10px rgba(0,0,0,.4); }
 .collage > div:nth-child(1) { left: 0; transform: rotate(-7deg); } .collage > div:nth-child(2) { left: 18px; z-index: 1; } .collage > div:nth-child(3) { left: 36px; transform: rotate(7deg); z-index: 0; }
