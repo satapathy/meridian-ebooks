@@ -14,4 +14,6 @@ services:
       - ${MERIDIAN_IMPORT:-./import}:/import:ro
     environment:
       MAX_ARCHIVE_BYTES: "8589934592"   # cap for an expanded .zip upload (8 GiB)
+      # "off" forbids the Tools > "Suggest categories online" feature (title/author/ISBN go to Google Books / Open Library)
+      ONLINE_LOOKUP: "${ONLINE_LOOKUP:-on}"
     restart: unless-stopped

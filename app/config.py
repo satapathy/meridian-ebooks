@@ -15,6 +15,9 @@ class Settings:
         self.import_dir = Path(os.getenv("IMPORT_DIR", "./import")).resolve()
         # Safety cap for a single uploaded .zip archive once expanded (bytes).
         self.max_archive_bytes = int(os.getenv("MAX_ARCHIVE_BYTES", str(8 * 1024**3)))
+        # Online category lookup (Google Books / Open Library). Only runs when a user starts it;
+        # set ONLINE_LOOKUP=off to forbid outgoing lookups entirely.
+        self.online_lookup = os.getenv("ONLINE_LOOKUP", "on").strip().lower() not in ("0", "off", "false", "no")
 
     @property
     def library_dir(self) -> Path:

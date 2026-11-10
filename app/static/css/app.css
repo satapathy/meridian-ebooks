@@ -351,3 +351,23 @@ mx-card:hover .stack i:nth-child(2) { transform: translate(8px, -6px) rotate(2.5
 .preview b { display: block; font-size: 1.1875rem; font-weight: 600; }
 
 .subtitle { color: var(--muted); font-size: 0.9375rem; line-height: 1.3; margin: 2px 0 4px; }
+
+/* ---- Suggest categories online ---- */
+.sg-bar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin: 16px 0 8px; }
+.sg-bar b { margin-right: auto; }
+.sg-list { display: flex; flex-direction: column; gap: 8px; }
+.sg-row { display: grid; grid-template-columns: auto 1fr; gap: 12px; align-items: start; padding: 12px; border: 1px solid var(--line); border-radius: 14px; background: var(--glass-2); }
+.sg-row.saved { opacity: .55; }
+.sg-row.failed { border-color: var(--a3); }
+.sg-fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 8px 12px; margin: 8px 0; }
+
+/* ---- Fetch category / cover (book panel) ---- */
+.fetch-row { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-top: -4px; }
+.fetch-row > #fc-out { flex-basis: 100%; }
+.fetch-card { display: flex; gap: 14px; align-items: flex-start; margin-top: 10px; padding: 12px; border: 1px solid var(--line); border-radius: 14px; background: var(--glass-2); }
+.fetch-btns { display: flex; gap: 8px; margin-top: 8px; }
+.cand-cover { width: 84px; border-radius: 6px; box-shadow: var(--shadow); flex: none; }
+.in.filled { border-color: var(--a2); }
+.sg-row { grid-template-columns: auto 1fr auto; }
+.sg-picks { display: flex; flex-direction: column; gap: 8px; padding-top: 2px; }
+.sg-cover { width: 64px; border-radius: 6px; box-shadow: var(--shadow); align-self: start; }

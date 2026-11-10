@@ -8,7 +8,7 @@ from fastapi.staticfiles import StaticFiles
 from . import __version__
 from .config import settings
 from .db import init_db
-from .routers import books, library, upload
+from .routers import books, library, lookup, upload
 
 STATIC = Path(__file__).parent / "static"
 
@@ -31,6 +31,7 @@ TAGS = [
     {"name": "Upload", "description": "Single files, folder trees, archives and server-side imports."},
     {"name": "Export", "description": "Library export as ZIP."},
     {"name": "Library", "description": "Facets, stats, duplicate detection and cleanup."},
+    {"name": "Lookup", "description": "Suggest categories and tags from public sites (Google Books, Open Library). Nothing is saved automatically."},
 ]
 
 
@@ -49,6 +50,7 @@ app = FastAPI(title="Meridian Ebooks", version=__version__, description=DESCRIPT
 app.include_router(books.router, prefix="/api")
 app.include_router(upload.router, prefix="/api")
 app.include_router(library.router, prefix="/api")
+app.include_router(lookup.router, prefix="/api")
 app.mount("/static", StaticFiles(directory=STATIC), name="static")
 
 

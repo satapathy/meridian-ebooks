@@ -72,9 +72,11 @@ class MxDrawer extends HTMLElement {
               <a class="btn primary" href="/api/books/${b.id}/download">${icon("download")}Download</a>
               ${b.format === "pdf" ? `<a class="btn" target="_blank" rel="noopener" href="/api/books/${b.id}/download?inline=true">${icon("book")}Read</a>` : ""}
               <button class="btn" data-act="cover">${icon("image")}${b.cover_source === "user" ? "Replace cover" : "Upload cover"}</button>
+              <button class="btn" data-act="fetch-cover" title="Look for a cover on Google Books / Open Library">${icon("search")}Fetch cover</button>
               ${b.cover_source === "user" ? `<button class="btn" data-act="uncover" title="Go back to the cover embedded in the book">Remove custom cover</button>` : ""}
               <input type="file" accept="image/*" hidden id="cover-in">
             </div>
+            <div id="fcv-out"></div>
           </div>
         </div>
 
@@ -88,6 +90,11 @@ class MxDrawer extends HTMLElement {
             <label class="field"><span>Series #</span><input class="in" name="series_index" type="number" step="any" value="${b.series_index ?? ""}"></label>
             <label class="field"><span>Category</span><input class="in" name="category" list="cat-list" value="${esc(b.category)}"></label>
             <label class="field"><span>Sub-category</span><input class="in" name="subcategory" value="${esc(b.subcategory)}"></label>
+            <div class="full fetch-row">
+              <button type="button" class="btn sm" data-act="fetch-cat" title="Look up on Google Books / Open Library">${icon("search")}Fetch category</button>
+              <span class="small muted">Fills the form from Google Books / Open Library. Nothing is saved until you press Save metadata.</span>
+              <div id="fc-out"></div>
+            </div>
             <label class="field"><span>Publisher</span><input class="in" name="publisher" value="${esc(b.publisher)}"></label>
             <label class="field"><span>Published</span><input class="in" name="published" placeholder="YYYY or YYYY-MM-DD" value="${esc(b.published)}"></label>
             <label class="field"><span>Language</span><input class="in" name="language" placeholder="en" value="${esc(b.language)}"></label>
@@ -179,13 +186,14 @@ class MxDrawer extends HTMLElement {
       const fd = new FormData(); fd.append("file", cin.files[0]);
       try {
         this.book = await api(`/books/${b.id}/cover`, { method: "PUT", body: fd });
-        emit("book-updated", this.book); this.render(); toast("Cover saved next to the book - it now overrides the embedded cover");
+        emit("book-updated", this.book); this.renderKeepingEdits(); toast("Cover saved next to the book - it now overrides the embedded cover");
       } catch {}
     };
     const un = this.querySelector('[data-act="uncover"]');
     if (un) un.onclick = async () => {
-      try { this.book = await api(`/books/${b.id}/cover`, { method: "DELETE" }); emit("book-updated", this.book); this.render(); toast("Custom cover removed"); } catch {}
+      try { this.book = await api(`/books/${b.id}/cover`, { method: "DELETE" }); emit("book-updated", this.book); this.renderKeepingEdits(); toast("Custom cover removed"); } catch {}
     };
+    this.bindLookup();
     this.querySelector('[data-act="delete"]').onclick = async () => {
       if (!confirm(`Delete “${b.title}” and its files permanently?`)) return;
       try {
@@ -194,8 +202,89 @@ class MxDrawer extends HTMLElement {
       } catch {}
     };
   }
+
+  /** Re-render (after a cover change) without losing metadata the user has typed or filled in but not saved yet. */
+  renderKeepingEdits() {
+    const snap = [...this.querySelectorAll("#mform [name]")].map((e) => [e.name, e.value]);
+    this.render();
+    for (const [name, value] of snap) {
+      const el = this.querySelector(`#mform [name="${name}"]`);
+      if (el && el.value !== value) { el.value = value; el.classList.add("filled"); }
+    }
+  }
+
+  /** "Fetch category" (fills the form) and "Fetch cover" (preview, then keep) - independent of each other. */
+  bindLookup() {
+    const b = this.book;
+    const fcat = this.querySelector('[data-act="fetch-cat"]'), fcover = this.querySelector('[data-act="fetch-cover"]');
+    lookupEnabled().then((on) => { if (!on) { fcat.closest(".fetch-row").remove(); fcover.remove(); } });
+    const note = (el, msg) => { el.innerHTML = `<div class="fetch-card"><span class="muted small">${esc(msg)}</span></div>`; };
+
+    fcat.onclick = async () => {
+      const out = this.querySelector("#fc-out"), label = fcat.innerHTML;
+      fcat.disabled = true; fcat.textContent = "Looking up…"; out.innerHTML = "";
+      try {
+        const r = await api("/lookup/suggest", { json: { ids: [b.id], fields: ["category"], overwrite: true }, quiet: true });
+        const res = r.results[0], s = res.suggestion;
+        if (r.unavailable) return note(out, `Could not reach Google Books / Open Library (${r.unavailable}).`);
+        if (!s) return note(out, res.reason || "No match found online.");
+        out.innerHTML = `<div class="fetch-card"><div style="flex:1;min-width:0">
+            <div class="small muted">${esc(s.source)} · ${s.confidence === "isbn" ? "ISBN match" : "title match"}${s.matched ? ` · “${esc(s.matched)}”` : ""}</div>
+            <div style="margin:4px 0">${s.category ? `Category <b>${esc(s.category)}</b>` : ""}${s.subcategory ? ` › <b>${esc(s.subcategory)}</b>` : ""}</div>
+            ${s.tags?.length ? `<label class="check small"><input type="checkbox" id="fc-tags" checked><span>Also add tags: ${s.tags.map(esc).join(", ")}</span></label>` : ""}
+            <div class="fetch-btns"><button type="button" class="btn sm primary" id="fc-use">Fill the form</button><button type="button" class="btn sm" id="fc-no">Dismiss</button></div>
+          </div></div>`;
+        out.querySelector("#fc-no").onclick = () => (out.innerHTML = "");
+        out.querySelector("#fc-use").onclick = () => {
+          const set = (name, v) => { const i = this.querySelector(`[name="${name}"]`); i.value = v; i.classList.add("filled"); };
+          if (s.category) set("category", s.category);
+          if (s.subcategory) set("subcategory", s.subcategory);
+          const tagsBox = out.querySelector("#fc-tags");
+          if (tagsBox?.checked) {
+            const input = this.querySelector('[name="tags"]');
+            const have = input.value.split(",").map((t) => t.trim()).filter(Boolean);
+            const merged = [...have, ...s.tags.filter((t) => !have.some((h) => h.toLowerCase() === t.toLowerCase()))];
+            set("tags", merged.join(", "));
+          }
+          note(out, "Filled in. Press Save metadata to keep it.");
+        };
+      } catch (e) { note(out, e.message || "Lookup failed."); }
+      finally { fcat.disabled = false; fcat.innerHTML = label; }
+    };
+
+    fcover.onclick = async () => {
+      const out = this.querySelector("#fcv-out"), label = fcover.innerHTML;
+      fcover.disabled = true; fcover.textContent = "Looking up…"; out.innerHTML = "";
+      try {
+        const res = await fetch(`/api/lookup/cover/${b.id}`);
+        if (!res.ok) {
+          const msg = res.status === 404 ? "No cover found online for this book." : res.status === 503 ? "Could not reach Google Books / Open Library." : "Cover lookup is not available.";
+          return note(out, msg);
+        }
+        const blob = await res.blob(), url = URL.createObjectURL(blob);
+        const src = res.headers.get("X-Cover-Source"), how = res.headers.get("X-Cover-Confidence") === "isbn" ? "ISBN match" : "title match";
+        out.innerHTML = `<div class="fetch-card"><img class="cand-cover" src="${url}" alt="Cover found online"><div>
+            <div class="small muted">${esc(src)} · ${how}${res.headers.get("X-Cover-Matched") ? ` · “${esc(res.headers.get("X-Cover-Matched"))}”` : ""}</div>
+            <div class="small muted">${b.has_cover ? "Replaces the current cover." : "This book has no cover yet."}</div>
+            <div class="fetch-btns"><button type="button" class="btn sm primary" id="fcv-use">Use this cover</button><button type="button" class="btn sm" id="fcv-no">Discard</button></div>
+          </div></div>`;
+        out.querySelector("#fcv-no").onclick = () => { URL.revokeObjectURL(url); out.innerHTML = ""; };
+        out.querySelector("#fcv-use").onclick = async () => {
+          const fd = new FormData(); fd.append("file", blob, "cover.jpg");
+          try {
+            this.book = await api(`/books/${b.id}/cover`, { method: "PUT", body: fd });
+            URL.revokeObjectURL(url); emit("book-updated", this.book); this.renderKeepingEdits(); toast("Cover saved next to the book");
+          } catch {}
+        };
+      } catch { note(out, "Could not reach the server."); }
+      finally { fcover.disabled = false; fcover.innerHTML = label; }
+    };
+  }
 }
 customElements.define("mx-drawer", MxDrawer);
+
+let _lookupOn;
+const lookupEnabled = () => (_lookupOn ||= api("/lookup/status", { quiet: true }).then((s) => s.enabled).catch(() => { _lookupOn = null; return false; }));
 
 // ------------------------------------------------------------------ <mx-upload>
 async function walkEntry(entry, path = "") {

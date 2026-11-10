@@ -198,6 +198,19 @@ const VIEWS = {
         <label class="check" style="margin-top:10px"><input type="checkbox" id="iovw"><span>Let JSON files overwrite existing metadata that differs <span class="muted">(books are imported first, then JSON)</span></span></label>
         <div id="iprog"></div>
       </section>
+      <section class="glass" style="padding:22px;margin-bottom:18px" id="sg">
+        <h2>Suggest categories online</h2>
+        <p class="muted">Look books up on <b>Google Books</b> (category, sub-category) and <b>Open Library</b> (tags). Nothing is changed until you review the suggestions and accept them. Only each book's title, author and ISBN are sent to those sites, and only when you press the button.</p>
+        <div id="sg-off" class="muted small" style="display:none">Online lookup is turned off on this server (<code>ONLINE_LOOKUP=off</code>).</div>
+        <div style="display:flex;gap:22px;flex-wrap:wrap">
+          <label class="check"><input type="checkbox" id="sg-f-cat" checked><span>Categories &amp; tags</span></label>
+          <label class="check"><input type="checkbox" id="sg-f-cover" checked><span>Covers</span></label>
+        </div>
+        <label class="check" style="margin-top:10px"><input type="checkbox" id="sg-missing" checked><span>Only books that are missing them <span class="muted">(no category / no cover at all)</span></span></label>
+        <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:12px"><button class="btn primary" id="sg-go">Find suggestions</button><button class="btn" id="sg-stop" style="display:none">Stop</button></div>
+        <div id="sg-prog"></div>
+        <div id="sg-out"></div>
+      </section>
       <section class="glass" style="padding:22px">
         <h2>API</h2><p class="muted">Everything in this UI is available over REST.</p>
         <a class="btn primary" href="/docs" target="_blank" rel="noopener">Swagger UI</a> <a class="btn" href="/redoc" target="_blank" rel="noopener">ReDoc</a> <a class="btn" href="/openapi.json" target="_blank" rel="noopener">openapi.json</a>
@@ -228,8 +241,131 @@ const VIEWS = {
         toast(`Import finished: ${job.summary.created} added`); refreshRail();
       } catch {}
     };
+    suggestTool(root.querySelector("#sg"));
   },
 };
+
+/** "Suggest categories online": look up -> review/edit -> accept. Nothing is saved until "Accept". */
+function suggestTool(box) {
+  const $ = (s) => box.querySelector(s);
+  const go = $("#sg-go"), stop = $("#sg-stop"), prog = $("#sg-prog"), out = $("#sg-out");
+  let cancelled = false;
+  api("/lookup/status", { quiet: true }).then((s) => {
+    if (!s.enabled) { go.disabled = true; $("#sg-off").style.display = "block"; }
+  }).catch(() => {});
+  stop.onclick = () => { cancelled = true; stop.disabled = true; };
+
+  const bar = (done, total, note = "", finished = false) => {
+    prog.innerHTML = `<div class="progress${finished ? " done" : ""}"><i style="width:${total ? (done / total) * 100 : 0}%"></i></div><div class="muted small">${done} / ${total} looked up${note}</div>`;
+  };
+  const field = (label, f, v) => `<label class="field"><span>${label}</span><input class="in" data-f="${f}" value="${esc(v)}"></label>`;
+
+  const showResults = (found, missed, unavailable) => {
+    const how = (s) => `${esc(s.source)} · ${s.confidence === "isbn" ? "ISBN match" : "title match"}${s.matched ? ` · “${esc(s.matched)}”` : ""}`;
+    const rows = found.map((x) => {
+      const s = x.suggestion, c = x.cover;
+      return `<div class="sg-row" data-id="${esc(x.id)}">
+        <div class="sg-picks">
+          ${s ? `<label class="check small"><input type="checkbox" class="sg-pick" checked aria-label="Accept metadata for ${esc(x.title)}"><span>Metadata</span></label>` : ""}
+          ${c ? `<label class="check small"><input type="checkbox" class="sg-cpick" checked aria-label="Accept cover for ${esc(x.title)}"><span>Cover</span></label>` : ""}
+        </div>
+        <div style="min-width:0">
+          <div><b>${esc(x.title)}</b> <span class="muted small">${esc(x.author)}</span></div>
+          ${s ? `<div class="sg-fields">
+            ${s.category != null ? field("Category", "category", s.category) : ""}
+            ${s.subcategory != null ? field("Sub-category", "subcategory", s.subcategory) : ""}
+            ${s.tags != null ? field("Tags (comma separated)", "tags", s.tags.join(", ")) : ""}
+          </div><div class="muted small">${how(s)}</div>` : ""}
+          ${c ? `<div class="muted small" style="margin-top:6px">Cover: ${how(c)}</div>` : ""}
+        </div>
+        ${c ? `<img class="sg-cover" loading="lazy" alt="Cover found for ${esc(x.title)}" src="/api/lookup/cover/${esc(x.id)}">` : ""}</div>`;
+    }).join("");
+    out.innerHTML = `${unavailable ? `<div class="log" style="margin-top:12px"><div class="error"><em>stopped</em><span>The public sites could not be reached (${esc(unavailable)}). Suggestions found so far are listed below.</span></div></div>` : ""}
+      ${found.length ? `<div class="sg-bar"><b>${found.length} suggestion${found.length > 1 ? "s" : ""}</b>
+          <button class="btn" id="sg-all">Select all</button><button class="btn" id="sg-none">Select none</button>
+          <button class="btn primary" id="sg-accept"></button></div>
+        <div class="sg-list">${rows}</div>` : `<p class="muted" style="margin-top:12px">No suggestions found.</p>`}
+      ${missed.length ? `<details style="margin-top:12px"><summary class="muted small" style="cursor:pointer">${missed.length} book${missed.length > 1 ? "s" : ""} without a suggestion</summary>
+        <div class="log">${missed.map((x) => `<div><span>${esc(x.title)} — ${esc(x.reason)}</span></div>`).join("")}</div></details>` : ""}`;
+    if (!found.length) return;
+    const picks = () => [...out.querySelectorAll(".sg-pick, .sg-cpick")];
+    const accept = $("#sg-accept");
+    const count = () => {
+      const n = picks().filter((p) => p.checked).length;
+      accept.textContent = `Accept selected (${n})`; accept.disabled = !n;
+    };
+    picks().forEach((p) => (p.onchange = count));
+    $("#sg-all").onclick = () => { picks().forEach((p) => (p.checked = true)); count(); };
+    $("#sg-none").onclick = () => { picks().forEach((p) => (p.checked = false)); count(); };
+    count();
+    accept.onclick = async () => {
+      const rowsToSave = [...out.querySelectorAll(".sg-row")].filter((r) => r.querySelector(".sg-pick:checked, .sg-cpick:checked"));
+      accept.disabled = true;
+      let saved = 0, failed = 0, next = 0;
+      const done = (row, sel) => { const p = row.querySelector(sel); if (p) { p.checked = false; p.disabled = true; } };
+      const worker = async () => {
+        while (next < rowsToSave.length) {
+          const row = rowsToSave[next++], id = row.dataset.id;
+          let ok = true;
+          if (row.querySelector(".sg-pick:checked")) {         // category / sub-category / tags (as edited above)
+            const patch = {};
+            row.querySelectorAll("[data-f]").forEach((i) => {
+              const v = i.value.trim();
+              if (v) patch[i.dataset.f] = i.dataset.f === "tags" ? v.split(",").map((t) => t.trim()).filter(Boolean) : v;
+            });
+            try {
+              if (Object.keys(patch).length) await api(`/books/${id}`, { method: "PATCH", json: patch, quiet: true });
+              done(row, ".sg-pick");
+            } catch { ok = false; }
+          }
+          if (row.querySelector(".sg-cpick:checked")) {         // cover: re-fetch the previewed image, then store it
+            try {
+              const img = await fetch(`/api/lookup/cover/${id}`);
+              if (!img.ok) throw new Error("cover no longer available");
+              const fd = new FormData(); fd.append("file", await img.blob(), "cover.jpg");
+              await api(`/books/${id}/cover`, { method: "PUT", body: fd, quiet: true });
+              done(row, ".sg-cpick");
+            } catch { ok = false; }
+          }
+          row.classList.add(ok ? "saved" : "failed");
+          ok ? saved++ : failed++;
+        }
+      };
+      await Promise.all(Array.from({ length: 3 }, worker));
+      toast(`${saved} book${saved === 1 ? "" : "s"} updated${failed ? ` · ${failed} failed` : ""}`, failed ? "err" : "ok");
+      // not emit("library-changed"): that re-renders this page and would wipe the rows still under review
+      refreshRail(); count();
+    };
+  };
+
+  go.onclick = async () => {
+    cancelled = false; go.disabled = true; stop.disabled = false; stop.style.display = ""; out.innerHTML = ""; prog.innerHTML = "";
+    const found = [], missed = [];
+    let unavailable = null, done = 0, total = 0;
+    const fields = [$("#sg-f-cat").checked && "category", $("#sg-f-cover").checked && "cover"].filter(Boolean);
+    if (!fields.length) { toast("Tick categories and/or covers", "err"); go.disabled = false; stop.style.display = "none"; return; }
+    try {
+      const { items } = await api(`/lookup/candidates?only_missing=${$("#sg-missing").checked}&${fields.map((f) => "fields=" + f).join("&")}`);
+      total = items.length;
+      if (!total) { prog.innerHTML = `<p class="muted">Nothing to look up: every book already has a ${fields.join(" and ")}.</p>`; return; }
+      for (let i = 0; i < total && !cancelled && !unavailable; i += 5) {
+        const ids = items.slice(i, i + 5).map((b) => b.id);
+        const r = await api("/lookup/suggest", { json: { ids, fields }, quiet: true });
+        for (const x of r.results) (x.suggestion || x.cover ? found : missed).push(x);
+        unavailable = r.unavailable;
+        done += ids.length;
+        bar(done, total);
+      }
+      bar(done, total, cancelled ? " · stopped" : unavailable ? " · stopped" : " · done", true);
+      showResults(found, missed, unavailable);
+    } catch (e) {
+      toast(e.message, "err", 6000);
+      if (total) showResults(found, missed, null);
+    } finally {
+      go.disabled = false; stop.style.display = "none";
+    }
+  };
+}
 
 refreshRail();
 render();

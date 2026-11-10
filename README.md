@@ -19,6 +19,7 @@ Runs in one container, including on a Raspberry Pi.
 * Written into the file for EPUB, PDF and DOCX; stored in a `book-name-info.json` sidecar for other formats
 * Title and file name are independent; rename the file separately
 * Import metadata from JSON, with a warning and diff when it would overwrite existing values
+* Fetch categories, sub-categories, tags and cover images from Google Books and Open Library - for one book from its edit panel, or in bulk from Tools; you review every result before it is saved
 
 **Search and export**
 * Wildcards (`*`, `?`), field scopes (`author:`, `title:`, `tag:`…), quoted phrases and `-exclusions`
@@ -122,6 +123,7 @@ MERIDIAN_IMPORT=./import    # optional read-only folder for server-side imports
 MERIDIAN_UID=1000           # set to the output of `id -u`
 MERIDIAN_GID=1000           # set to the output of `id -g`
 MERIDIAN_PORT=8000
+ONLINE_LOOKUP=on            # "off" disables Tools > Suggest categories online (no data ever leaves the server)
 ```
 
 Or pass them inline: `MERIDIAN_DATA=/srv/ebooks MERIDIAN_UID=$(id -u) MERIDIAN_GID=$(id -g) docker compose up --build`.
@@ -190,6 +192,7 @@ A 64-bit OS (`uname -m` prints `aarch64`) is recommended. On 32-bit Raspberry Pi
 | Flat sharded storage | UUID hex split 4 chars at a time: `1234/5678/abcd/ef01/…/book-name.ext` (32 hex chars → 8 levels) |
 | Library export as ZIP | `GET /api/export?group_by=category` or `author` (optionally `format=`, `ids=`, `include_metadata=`) |
 | Metadata editing | `PATCH /api/books/{id}`. EPUB, PDF and DOCX get what they can hold **inside the file**; everything else goes into `book-name-info.json` next to the book. The response's `storage` field shows what went where. |
+| Fetch category and cover online | **Per book:** in the book panel, **Fetch category** fills the Category / Sub-category fields (and, if you tick it, tags) - nothing is saved until you press *Save metadata* - and **Fetch cover** shows the cover it found with *Use this cover* / *Discard*. The two buttons work independently and also work when the book already has a value (you see the old and new before keeping). **In bulk:** **Tools > Suggest categories online**, with *Categories & tags* and *Covers* ticked separately, and a separate *Metadata* / *Cover* tick per book. A fetched cover is stored exactly like an uploaded one (`book-name-cover.jpg` next to the book, overriding the embedded cover), is only downloaded from Google Books / Open Library / archive.org over https, must be at least 100x140 px and is limited to 6 MB. API: `GET /api/lookup/candidates`, `POST /api/lookup/suggest` (`fields`, `overwrite`), `GET /api/lookup/cover/{id}`. Looks books up on **Google Books** (category and sub-category, e.g. `Fiction / Science Fiction / Space Opera`) and **Open Library** (subjects become tags) by ISBN, or by title and author when there is no ISBN. Results are a **preview**: each suggestion can be edited or unticked, and nothing is saved until you press *Accept selected*. Suggestions only fill fields that are empty, existing categories keep your spelling (`science fiction` becomes your `Science Fiction`), and titles must match exactly (a sequel never matches its first book). Only the title, author and ISBN are sent, and only when you press the button; lookups are throttled and cached, and an unreachable site is reported rather than failing. Set `ONLINE_LOOKUP=off` to disable it. |
 | Title ≠ filename | Editing the title never touches the file name. `POST /api/books/{id}/rename` renames the file (and its sidecar) separately. |
 
 ### What is stored where
