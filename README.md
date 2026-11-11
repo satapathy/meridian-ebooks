@@ -215,9 +215,31 @@ Writing metadata into a file changes its bytes, so the server tracks both the or
 
 ```bash
 pip install -r requirements.txt
-python -m pytest                      # backend test suite
 DATA_DIR=./data uvicorn app.main:app --reload
 ```
+
+### Unit tests
+
+The backend has a [pytest](https://docs.pytest.org) suite in `tests/` (the online lookups run against a mocked network, so no internet is needed). The dependencies (`pytest`, `pytest-cov`, `httpx`) are in `requirements.txt`; the Docker image leaves them out.
+
+```bash
+pip install -r requirements.txt       # once
+python -m pytest                      # run everything
+```
+
+* **One line per test** - `pytest.ini` turns on `-v`, so every test prints its own `PASSED` / `FAILED` line.
+* **95% coverage gate** - the same file adds `--cov=app --cov-fail-under=95`. Each run ends with a coverage table (uncovered lines listed) and **exits non-zero if total coverage of `app/` is below 95%**, which fails the build.
+* **CI** - `.github/workflows/tests.yml` runs `python -m pytest` on every push and pull request, so a drop below 95% shows up as a failed check.
+
+Handy variations:
+
+```bash
+python -m pytest tests/test_lookup.py                  # one file (the coverage gate still applies, so it will fail on a partial run; add --no-cov to skip it)
+python -m pytest -k "bulk and not export" --no-cov     # tests matching a name
+python -m pytest --cov-report=html                     # browsable report in htmlcov/index.html
+```
+
+Add tests next to the feature they cover (`tests/test_<area>.py`, shared fixtures in `tests/conftest.py`). New code without tests will pull coverage down and trip the gate.
 
 Regenerate the README screenshots (against an empty throwaway instance - the script adds demo books and refuses to run on a library that already has books):
 

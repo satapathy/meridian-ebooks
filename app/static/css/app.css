@@ -398,7 +398,7 @@ mx-card:hover .stack i:nth-child(2) { transform: translate(8px, -6px) rotate(2.5
 .seg .btn:first-child { border-radius: 10px 0 0 10px; } .seg .btn:last-child { border-radius: 0 10px 10px 0; margin-left: -1px; }
 .seg .btn.on { background: color-mix(in srgb, var(--a1) 22%, transparent); border-color: var(--a1); color: var(--text); }
 .seg .btn svg { width: 16px; height: 16px; }
-.tablewrap { overflow: auto; max-height: calc(100vh - 150px); border: 1px solid var(--line); border-radius: 14px; background: var(--glass); }
+.tablewrap { overflow: auto; max-height: calc(100vh - 195px); border: 1px solid var(--line); border-radius: 14px; background: var(--glass); }
 table.books { border-collapse: separate; border-spacing: 0; width: max-content; min-width: 100%; font-size: .8125rem; }
 table.books th { position: sticky; top: 0; z-index: 2; text-align: left; white-space: nowrap; padding: 6px 10px; font-size: .72rem; font-weight: 600; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); background: color-mix(in srgb, var(--bg2) 94%, transparent); backdrop-filter: blur(10px); border-bottom: 1px solid var(--line); }
 table.books th.sortable { cursor: pointer; user-select: none; }
@@ -421,9 +421,9 @@ table.books .tag { padding: 1px 8px; font-size: .7rem; cursor: inherit; }
 table.books td.c-sel, table.books th.c-sel { width: 32px; padding: 0 0 0 10px; cursor: default; }
 table.books .c-sel input { width: 16px; height: 16px; accent-color: var(--a1); cursor: pointer; vertical-align: middle; }
 table.books tbody tr.sel { background: color-mix(in srgb, var(--a1) 16%, transparent); }
-.bulkbar { position: fixed; z-index: 50; left: 50%; bottom: 22px; transform: translateX(-50%); display: flex; align-items: center; gap: 10px; padding: 10px 14px; border-radius: 16px; box-shadow: var(--shadow); background: color-mix(in srgb, var(--bg2) 94%, transparent); animation: pop .22s cubic-bezier(.2,.8,.2,1); }
-.bulkbar[hidden] { display: none; }
-@media (max-width: 860px) { .bulkbar { bottom: 78px; } }
+.bulkbar { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; min-height: 34px; margin-bottom: 8px; padding: 3px 10px; border: 1px dashed var(--line); border-radius: 10px; transition: background .15s, border-color .15s; }
+.bulkbar.on { border-style: solid; border-color: color-mix(in srgb, var(--a1) 55%, var(--line)); background: color-mix(in srgb, var(--a1) 10%, transparent); }
+.bulkbar b { margin-right: 4px; }
 .dialog.bk { width: min(620px, 100%); }
 .bk-grid { display: grid; grid-template-columns: 130px 1fr; gap: 6px 12px; align-items: start; margin-top: 10px; }
 .bk-on { padding-top: 5px; }

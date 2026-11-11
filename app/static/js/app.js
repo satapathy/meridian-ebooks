@@ -200,6 +200,7 @@ const VIEWS = {
       count.textContent = group ? `${total} item${total === 1 ? "" : "s"} · series grouped` : `${total} book${total === 1 ? "" : "s"}`;
       if (!total) {
         const filtered = state.q || state.author || state.category || state.format || state.tag || state.series;
+        selApi?.bar.remove();
         grid.outerHTML = filtered
           ? `<div class="empty"><h2>Nothing found</h2><p>Try a wildcard like <code>*${esc(state.q.replace(/\*/g, ""))}*</code> or a different filter.</p></div>`
           : emptyState();
@@ -209,7 +210,7 @@ const VIEWS = {
     if (list) {
       // ---- row selection + bulk edit bar
       const sel = new Set(); let lastId = null;
-      const bar = document.createElement("div"); bar.className = "bulkbar glass"; bar.hidden = true; root.append(bar);
+      const bar = document.createElement("div"); bar.className = "bulkbar"; grid.before(bar);   // in the page flow, right above the table
       const rows = () => [...grid.querySelectorAll("tbody tr")];
       const openBulk = () => document.getElementById("bulkedit").open({
         ids: [...sel],
@@ -221,9 +222,11 @@ const VIEWS = {
         all.checked = loaded.length > 0 && loaded.every((tr) => sel.has(tr.dataset.id));
         all.indeterminate = !all.checked && loaded.some((tr) => sel.has(tr.dataset.id));
         const many = n >= 2;   // bulk editing needs at least two books; with 0 or 1 selected the buttons stay hidden
-        bar.hidden = !n;
-        bar.innerHTML = `<b>${n} selected</b>${n < total ? `<button class="btn sm" id="bb-all">Select all ${total}</button>` : ""}
+        bar.classList.toggle("on", n > 0);
+        bar.innerHTML = !n ? `<span class="muted small">Tick rows to select them; two or more can be edited together.</span>`
+          : `<b>${n} selected</b>${n < total ? `<button class="btn sm" id="bb-all">Select all ${total}</button>` : ""}
           ${many ? `<button class="btn sm primary" id="bb-edit">${icon("settings")}Bulk edit</button>` : ""}<button class="btn sm" id="bb-clear">Clear</button>`;
+        if (!n) return;
         bar.querySelector("#bb-clear").onclick = () => { sel.clear(); paint(); };
         if (many) bar.querySelector("#bb-edit").onclick = openBulk;
         const allBtn = bar.querySelector("#bb-all");
@@ -243,7 +246,7 @@ const VIEWS = {
         };
       };
       selApi = {
-        has: (id) => sel.has(id), paint,
+        has: (id) => sel.has(id), paint, bar,
         toggle(id, on, shift) {   // shift-click selects the range since the last click
           const ids = rows().map((tr) => tr.dataset.id), a = ids.indexOf(lastId), z = ids.indexOf(id);
           const targets = shift && a >= 0 ? ids.slice(Math.min(a, z), Math.max(a, z) + 1) : [id];
