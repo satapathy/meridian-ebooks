@@ -147,7 +147,7 @@ def test_rename_moves_the_sidecar_and_cover_along(client):
 
 def test_list_filters(client):
     a = upload(client, title="Alpha", marker="l1")
-    b = upload(client, title="Beta", marker="l2")
+    upload(client, title="Beta", marker="l2")
     client.patch(f"/api/books/{a}", json={"category": "Fiction", "subcategory": "Sci", "tags": ["x"], "series": "S1"})
 
     def titles(**params):
@@ -160,7 +160,6 @@ def test_list_filters(client):
     assert titles(tag="x") == ["Alpha"] and titles(series="s1") == ["Alpha"]
     assert titles(q="http://nowhere") == []                      # unknown "field:" prefix is searched literally
     assert titles(q='""') == ["Alpha", "Beta"]                   # an empty term is ignored
-    assert b
 
 
 # ----------------------------------------------------------------------------- export
@@ -199,9 +198,10 @@ def test_export_keeps_same_named_files_apart_and_includes_user_covers(client):
 
 
 def test_export_skips_rows_whose_file_is_gone(client):
-    a, b = upload(client, marker="g1"), upload(client, title="Kept", marker="g2")
+    a = upload(client, marker="g1")
+    upload(client, title="Kept", marker="g2")
     (book_dir(a) / client.get(f"/api/books/{a}").json()["filename"]).unlink()
-    assert int(client.get("/api/export").headers["x-book-count"]) == 1 and b
+    assert int(client.get("/api/export").headers["x-book-count"]) == 1
 
 
 # ----------------------------------------------------------------------------- duplicates and cleanup

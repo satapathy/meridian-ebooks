@@ -141,7 +141,7 @@ def test_cleanup_orphans_and_duplicates(client):
     (orphan / "x.epub").write_bytes(b"1234")
     dry = client.post("/api/cleanup").json()
     assert dry["dry_run"] and "".join(["dead"] * 8) in dry["orphan_folders_removed"] and orphan.exists()
-    done = client.post("/api/cleanup", params={"dry_run": "false"}).json()
+    client.post("/api/cleanup", params={"dry_run": "false"})
     assert not orphan.exists() and not (settings.library_dir / "dead").exists()
     assert client.get(f"/api/books/{a}").status_code == 200
 

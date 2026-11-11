@@ -1,14 +1,11 @@
-"""Metadata readers/writers, the real HTTP layer of the online lookup (network mocked), colours and storage helpers."""
+"""Metadata readers/writers, cover colours and storage helpers."""
 import io
 import sys
-import urllib.error
-import urllib.request
 import zipfile
 
-import pytest
 from PIL import Image
 
-from app import lookup, metadata as md, service
+from app import metadata as md, service
 from app.config import settings
 from app.storage import book_dir, prune_empty_parents
 
@@ -92,24 +89,42 @@ def test_unknown_formats_have_no_embedded_metadata(tmp_path):
 
 
 # ----------------------------------------------------------------------------- PDF / DOCX
-def test_pdf_roundtrip_and_encrypted_files(tmp_path):
-    import pymupdf
-
+def test_pdf_roundtrip_keeps_other_document_info(tmp_path):
     p = tmp_path / "a.pdf"
     p.write_bytes(make_pdf(title="Old", author="Someone", marker="m"))
-    assert md.write_metadata(p, "pdf", {"title": "New", "author": "Me", "tags": ["a", "b"], "description": "d"})
+    assert md.write_metadata(p, "pdf", {"title": "New", "author": "Me", "tags": ["a", "b"], "description": "d"}) == md.EMBEDDABLE["pdf"]
     meta, cover = md.read_metadata(p, "pdf")
-    assert (meta["title"], meta["author"], meta["tags"]) == ("New", "Me", ["a", "b"]) and cover
-    locked = tmp_path / "locked.pdf"
-    doc = pymupdf.open(p)
-    doc.save(locked, encryption=pymupdf.PDF_ENCRYPT_AES_256, user_pw="u", owner_pw="o")
-    doc.close()
-    assert md.read_metadata(locked, "pdf") == ({}, None)
-    assert md.write_metadata(locked, "pdf", {"title": "x"}) == set()
+    assert (meta["title"], meta["author"], meta["description"], meta["tags"]) == ("New", "Me", "d", ["a", "b"])
+    assert cover and Image.open(io.BytesIO(cover)).size[1] > 500                  # first page rendered as a JPEG
+    from pypdf import PdfReader
+
+    assert "test m" in str(PdfReader(p).metadata["/Producer"])                  # untouched fields survive the rewrite
+    md.write_metadata(p, "pdf", {"title": "Only title"})                          # emptied fields are cleared
+    assert md.read_metadata(p, "pdf")[0] == {"title": "Only title"}
+
+
+def test_pdf_with_a_password_is_left_alone(tmp_path):
+    from pypdf import PdfReader, PdfWriter
+
+    def protected(user_pw: str):
+        w = PdfWriter(clone_from=PdfReader(io.BytesIO(make_pdf(marker=user_pw or "empty"))))
+        w.encrypt(user_pw, "owner", algorithm="RC4-128")
+        f = tmp_path / f"locked-{user_pw or 'empty'}.pdf"
+        with open(f, "wb") as fh:
+            w.write(fh)
+        return f
+
+    locked = protected("secret")
+    before = locked.read_bytes()
+    assert md.read_metadata(locked, "pdf") == ({}, None)                          # cannot be read without the password
+    assert md.write_metadata(locked, "pdf", {"title": "x"}) == set() and locked.read_bytes() == before
+    open_pw = protected("")                                                       # empty user password: readable, still not rewritten
+    assert md.read_metadata(open_pw, "pdf")[0]["title"] == "PDF Title"
+    assert md.write_metadata(open_pw, "pdf", {"title": "x"}) == set()
 
 
 def test_pdf_cover_is_best_effort(tmp_path, monkeypatch):
-    import pymupdf
+    import pypdfium2
 
     p = tmp_path / "a.pdf"
     p.write_bytes(make_pdf(marker="c"))
@@ -117,16 +132,21 @@ def test_pdf_cover_is_best_effort(tmp_path, monkeypatch):
     def boom(*a, **k):
         raise RuntimeError("render failed")
 
-    monkeypatch.setattr(pymupdf, "Matrix", boom)
+    monkeypatch.setattr(pypdfium2, "PdfDocument", boom)
     meta, cover = md.read_metadata(p, "pdf")
-    assert meta["title"] == "PDF Title" and cover is None
+    assert meta["title"] == "PDF Title" and cover is None                         # the metadata is still read
+    monkeypatch.undo()
+    monkeypatch.setitem(sys.modules, "pypdfium2", None)                           # library missing altogether
+    assert md.read_metadata(p, "pdf")[1] is None
 
 
-def test_pdf_support_is_skipped_when_pymupdf_is_missing(tmp_path, monkeypatch):
-    p = tmp_path / "a.pdf"
-    p.write_bytes(make_pdf(marker="n"))
-    monkeypatch.setitem(sys.modules, "pymupdf", None)                         # `import pymupdf` now raises ImportError
-    assert md.read_metadata(p, "pdf") == ({}, None) and md.write_metadata(p, "pdf", {"title": "x"}) == set()
+def test_pdf_without_pages_has_no_cover(tmp_path):
+    from pypdf import PdfWriter
+
+    p = tmp_path / "empty.pdf"
+    with open(p, "wb") as fh:
+        PdfWriter().write(fh)
+    assert md._pdf_cover(p) is None
 
 
 def test_docx_write_removes_emptied_fields_and_tolerates_missing_core(tmp_path):
@@ -147,105 +167,6 @@ def test_cover_normalisation_handles_transparency_and_garbage():
     big = md.make_cover_jpeg(png(200, 3000), max_height=300)
     assert Image.open(io.BytesIO(big)).size[1] == 300
     assert md.make_cover_jpeg(b"definitely not an image") is None
-
-
-# ----------------------------------------------------------------------------- online lookup: the real HTTP layer
-class FakeResp:
-    def __init__(self, body: bytes, ctype="application/json"):
-        self.body, self.headers = body, {"Content-Type": ctype}
-
-    def __enter__(self):
-        return self
-
-    def __exit__(self, *a):
-        return False
-
-    def read(self, n=-1):
-        return self.body if n < 0 else self.body[:n]
-
-
-@pytest.fixture()
-def net(monkeypatch):
-    monkeypatch.setattr(lookup, "MIN_GAP", 0)
-    lookup.clear_cache()
-    yield
-    lookup.clear_cache()
-
-
-def test_http_json_parses_caches_and_maps_errors(net, monkeypatch):
-    calls = []
-
-    def ok(req, timeout=None):
-        calls.append(req.full_url)
-        return FakeResp(b'{"a": 1}')
-
-    monkeypatch.setattr(urllib.request, "urlopen", ok)
-    assert lookup._http_json("https://x.test/a") == {"a": 1} and lookup._http_json("https://x.test/a") == {"a": 1}
-    assert calls == ["https://x.test/a"]                                        # second call came from the cache
-
-    def http_error(code):
-        def f(req, timeout=None):
-            raise urllib.error.HTTPError(req.full_url, code, "msg", {}, None)
-        return f
-
-    for code, text in ((429, "rate limited"), (500, "service error 500")):
-        monkeypatch.setattr(urllib.request, "urlopen", http_error(code))
-        with pytest.raises(lookup.LookupUnavailable, match=text):
-            lookup._http_json(f"https://x.test/e{code}")
-    for exc in (urllib.error.URLError("down"), TimeoutError(), ValueError("bad json")):
-        monkeypatch.setattr(urllib.request, "urlopen", lambda req, timeout=None, e=exc: (_ for _ in ()).throw(e))
-        with pytest.raises(lookup.LookupUnavailable, match="not reachable"):
-            lookup._http_json("https://x.test/down")
-
-
-def test_http_json_cache_is_bounded(net, monkeypatch):
-    monkeypatch.setattr(lookup, "MAX_CACHE", 2)
-    monkeypatch.setattr(urllib.request, "urlopen", lambda req, timeout=None: FakeResp(b"{}"))
-    for i in range(4):
-        lookup._http_json(f"https://x.test/{i}")
-    assert len(lookup._cache) <= 2
-
-
-class FakeOpener:
-    def __init__(self, resp=None, exc=None):
-        self.resp, self.exc = resp, exc
-
-    def open(self, req, timeout=None):
-        if self.exc:
-            raise self.exc
-        return self.resp
-
-
-def test_http_bytes_checks_type_size_and_errors(net, monkeypatch):
-    url = "https://covers.openlibrary.org/b/id/1-L.jpg"
-
-    def opener(resp=None, exc=None):
-        monkeypatch.setattr(urllib.request, "build_opener", lambda *h: FakeOpener(resp, exc))
-
-    opener(FakeResp(b"IMG", "image/jpeg"))
-    assert lookup._http_bytes(url) == b"IMG"
-    opener(FakeResp(b"<html>", "text/html"))
-    with pytest.raises(lookup.LookupUnavailable, match="not an image"):
-        lookup._http_bytes(url)
-    monkeypatch.setattr(lookup, "MAX_IMAGE_BYTES", 2)
-    opener(FakeResp(b"123456", "image/png"))
-    with pytest.raises(lookup.LookupUnavailable, match="too large"):
-        lookup._http_bytes(url)
-    opener(exc=urllib.error.HTTPError(url, 404, "nf", {}, None))
-    with pytest.raises(lookup.LookupUnavailable, match="error 404"):
-        lookup._http_bytes(url)
-    opener(exc=urllib.error.URLError("down"))
-    with pytest.raises(lookup.LookupUnavailable, match="not reachable"):
-        lookup._http_bytes(url)
-
-
-def test_redirects_only_follow_allowed_hosts():
-    handler = lookup._SafeRedirect()
-    req = urllib.request.Request("https://covers.openlibrary.org/b/id/1-L.jpg")
-    with pytest.raises(urllib.error.URLError):
-        handler.redirect_request(req, None, 302, "Found", {}, "https://evil.example/x.jpg")
-    nxt = handler.redirect_request(req, None, 302, "Found", {}, "https://ia800000.us.archive.org/x.jpg")
-    assert nxt.full_url == "https://ia800000.us.archive.org/x.jpg"
 
 
 # ----------------------------------------------------------------------------- cover colours + storage

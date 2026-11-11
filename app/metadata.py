@@ -168,58 +168,62 @@ def _write_epub(path: Path, meta: dict) -> set[str]:
 
 
 # --------------------------------------------------------------------------- PDF
-def _read_pdf(path: Path) -> tuple[dict, bytes | None]:
-    try:
-        import pymupdf
-    except ImportError:  # not installable on 32-bit ARM: PDFs are stored but not inspected
-        return {}, None
+# pypdf (BSD) reads and writes the document information; pypdfium2 (Apache-2.0 / BSD) renders the first page as the cover.
+def _pdf_text(value) -> str:
+    return _clean(str(value)) if value else ""
 
-    doc = pymupdf.open(path)
+
+def _pdf_cover(path: Path) -> bytes | None:
+    """First page as a JPEG; best effort (no pages, password, damaged file -> None)."""
     try:
-        if doc.needs_pass:
-            return {}, None
-        md = doc.metadata or {}
-        meta = {
-            "title": _clean(md.get("title")),
-            "author": _clean(md.get("author")),
-            "description": _clean(md.get("subject")),
-            "tags": _split_list(md.get("keywords") or ""),
-        }
-        cover = None
+        import pypdfium2 as pdfium
+
+        pdf = pdfium.PdfDocument(str(path))
         try:
-            if doc.page_count:
-                pix = doc.load_page(0).get_pixmap(matrix=pymupdf.Matrix(0.9, 0.9))
-                cover = pix.tobytes("jpeg")
-        except Exception:
-            cover = None
-        return {k: v for k, v in meta.items() if v not in ("", [], None)}, cover
-    finally:
-        doc.close()
+            if not len(pdf):
+                return None
+            image = pdf[0].render(scale=0.9).to_pil().convert("RGB")
+        finally:
+            pdf.close()
+        out = io.BytesIO()
+        image.save(out, "JPEG", quality=85)
+        return out.getvalue()
+    except Exception:
+        return None
+
+
+def _read_pdf(path: Path) -> tuple[dict, bytes | None]:
+    from pypdf import PdfReader
+
+    reader = PdfReader(path)
+    if reader.is_encrypted and not reader.decrypt(""):          # needs a password we do not have
+        return {}, None
+    info = reader.metadata or {}
+    meta = {
+        "title": _pdf_text(info.get("/Title")),
+        "author": _pdf_text(info.get("/Author")),
+        "description": _pdf_text(info.get("/Subject")),
+        "tags": _split_list(_pdf_text(info.get("/Keywords"))),
+    }
+    return {k: v for k, v in meta.items() if v not in ("", [], None)}, _pdf_cover(path)
 
 
 def _write_pdf(path: Path, meta: dict) -> set[str]:
-    try:
-        import pymupdf
-    except ImportError:  # nothing embedded; the caller keeps all fields in the sidecar JSON
-        return set()
+    from pypdf import PdfReader, PdfWriter
 
+    reader = PdfReader(path)
+    if reader.is_encrypted:                                     # never rewrite a protected file
+        return set()
+    writer = PdfWriter(clone_from=reader)                       # keeps pages, producer and other document info
+    writer.add_metadata({
+        "/Title": meta.get("title") or "",
+        "/Author": meta.get("author") or "",
+        "/Subject": meta.get("description") or "",
+        "/Keywords": ", ".join(meta.get("tags") or []),
+    })
     tmp = path.with_name(path.name + ".tmp")
-    doc = pymupdf.open(path)
-    try:
-        if doc.needs_pass:
-            return set()
-        current = doc.metadata or {}
-        keep = {k: current.get(k) or "" for k in ("producer", "creator", "creationDate", "modDate", "trapped")}
-        keep.update(
-            title=meta.get("title") or "",
-            author=meta.get("author") or "",
-            subject=meta.get("description") or "",
-            keywords=", ".join(meta.get("tags") or []),
-        )
-        doc.set_metadata(keep)
-        doc.save(tmp, garbage=0, deflate=True)
-    finally:
-        doc.close()
+    with open(tmp, "wb") as fh:
+        writer.write(fh)
     os.replace(tmp, path)
     return set(EMBEDDABLE["pdf"])
 

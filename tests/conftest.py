@@ -46,15 +46,14 @@ def make_epub(title="The Test Book", author="Ann Author", subject="fantasy", mar
 
 
 def make_pdf(title="PDF Title", author="Pat PDF", marker="x") -> bytes:
-    import pymupdf
+    from pypdf import PdfWriter
 
-    doc = pymupdf.open()
-    page = doc.new_page()
-    page.insert_text((72, 72), f"Hello {marker}")
-    doc.set_metadata({"title": title, "author": author, "keywords": "alpha, beta"})
-    data = doc.tobytes()
-    doc.close()
-    return data
+    w = PdfWriter()
+    w.add_blank_page(612, 792)
+    w.add_metadata({"/Title": title, "/Author": author, "/Keywords": "alpha, beta", "/Producer": f"test {marker}"})   # producer makes each file unique
+    buf = io.BytesIO()
+    w.write(buf)
+    return buf.getvalue()
 
 
 def make_docx(title="Docx Title", author="Dana Docx", marker="x") -> bytes:

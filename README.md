@@ -9,20 +9,18 @@ Runs in one container, including on a Raspberry Pi.
 
 **Library**
 * Upload files, whole folders (recursive) or `.zip` archives; EPUB, PDF, DOCX, MOBI, AZW3, FB2, TXT, CBZ and more
-* Plex-style cover wall with infinite scroll, series grouping, Authors, Categories and Recently added views
-* Switch between the cover wall and a **list view**: a table with every metadata column (title, subtitle, author, series, category, tags, publisher, ISBN, rating, size, description...), sortable by clicking any heading; your choice is remembered in the browser
-* List rows carry a round dot in each cover's predominant colour, and Categories shows each collection as a little shelf of spines in its books' own colours (`GET /api/books/colors`)
-* **Bulk edit** in list view: tick rows (shift-click for a range, or select all matching the current filter), then change one or more fields - category, sub-category, tags (add or replace), author, series, publisher, published, language, rating - on all of them at once, with a live percent-complete progress bar (Stop cancels after the current batch)
+* Plex-style cover wall with infinite scroll and series grouping, plus Authors, Categories and Recently added views
+* **List view**: a sortable table with every metadata column (choice remembered per browser)
+* **Bulk edit**: select many rows and change category, tags, author and more in one go, or run a clean-up (Title Case, find/replace, trim...) on a field, with a progress bar
 * Generated covers for books without one; replace any cover with your own image
 * Server-side UUID per book, MD5 duplicate detection and one-call cleanup
 * Sharded folder storage derived from the UUID (`1234/5678/abcd/…`)
 
 **Metadata**
-* Edit title, subtitle, author, publisher, series, category, subcategory, tags, ISBN, rating and more
+* Edit title, subtitle, author, publisher, series, category, sub-category, tags, ISBN, rating and more
 * Written into the file for EPUB, PDF and DOCX; stored in a `book-name-info.json` sidecar for other formats
 * Title and file name are independent; rename the file separately
 * Import metadata from JSON, with a warning and diff when it would overwrite existing values
-* Fetch categories, sub-categories, tags and cover images from Google Books and Open Library - for one book with **Fetch metadata** (side-by-side current vs new, pick one of several covers), or in bulk from Tools; you review every result before it is saved
 
 **Search and export**
 * Wildcards (`*`, `?`), field scopes (`author:`, `title:`, `tag:`…), quoted phrases and `-exclusions`
@@ -34,72 +32,19 @@ Runs in one container, including on a Raspberry Pi.
 * No front-end build step: plain ES modules and native web components
 
 **Deployment**
-* Docker Compose with a configurable data folder, port and run-as user
-* Restarts automatically after a reboot (see the Raspberry Pi section)
+* Docker Compose with a configurable data folder, port and run-as user; restarts after a reboot
+* Works fully offline: fonts and the Swagger page are bundled, so the app never contacts another host
 * No built-in authentication - put it behind a reverse proxy or VPN before exposing it
-
-## Managing the container
-
-Run these in the project folder (next to `docker-compose.yml`). Your books and database live in the data folder (`./data` by default), not in the container or image, so none of the commands below delete them.
-
-**Status and logs**
-
-```bash
-docker compose ps                      # is it running / healthy?
-docker compose logs -f                 # follow the logs live (Ctrl+C stops following, not the app)
-docker compose logs --tail 100         # last 100 lines
-docker compose logs --since 30m        # last 30 minutes
-docker compose logs -t | grep -i error # timestamps, filtered for errors
-```
-
-**Stop and start**
-
-```bash
-docker compose stop                    # stop, keep the container
-docker compose start                   # start it again
-docker compose restart                 # restart (e.g. after changing .env)
-```
-
-**Remove the container**
-
-```bash
-docker compose down                    # stop and remove the container (data folder is untouched)
-```
-
-**Remove the image** (frees disk space; the next `docker compose up --build` rebuilds it)
-
-```bash
-docker compose down --rmi local        # remove the container and the image built for this project
-docker image ls meridian-ebooks        # confirm it is gone
-docker image prune -f                  # optional: also delete dangling layers left by old builds
-```
-
-**Start completely fresh** - this one **does delete your library**; back up the data folder first:
-
-```bash
-docker compose down --rmi local
-rm -rf ./data                          # or whatever MERIDIAN_DATA points to
-mkdir -p data
-```
-
-**Update after pulling new code**
-
-```bash
-docker compose up --build -d
-```
-
-**Check you are running the new build.** The version and build number are shown under the logo (top left of the UI) and at `GET /api/version`. They come from `version.json` in the project root. Run `python scripts/bump_build.py` before building to increase the build number, then confirm the UI shows it. If it still shows the old number, the image was not rebuilt (use `docker compose build --no-cache`); if the number is new but the UI looks old, do a hard refresh (Ctrl+Shift+R).
 
 ## Screenshots
 
-<!-- Images live in docs/screenshots/. Regenerate them with scripts/capture_screenshots.py (see Development). -->
-<!-- Or replace a file with the same name; no README edit needed. -->
+<!-- Images live in docs/screenshots/. Regenerate them with scripts/capture_screenshots.py (see Development), or replace a file with the same name; no README edit needed. -->
 
 **Library** - the landing page: a cover wall with format filters, category and sort controls, and a search box that accepts wildcards and field scopes. Books without an embedded cover get a generated one, and a series (here *Middle-earth*) can be collapsed into one stacked tile.
 
 ![Library view with a wall of book covers and a stacked series tile](docs/screenshots/library.png)
 
-**Book details** - click any book to open its panel: the cover (with an *Upload cover* button to replace it), tags, a *Download* button and the editable metadata form. Saving writes the metadata into the file for EPUB, PDF and DOCX, or into a `-info.json` sidecar for other formats.
+**Book details** - click any book to open its panel: the cover (with an *Upload cover* button), tags, a *Download* button and the editable metadata form.
 
 ![Book detail panel with an editable metadata form](docs/screenshots/book-details.png)
 
@@ -128,7 +73,6 @@ MERIDIAN_IMPORT=./import    # optional read-only folder for server-side imports
 MERIDIAN_UID=1000           # set to the output of `id -u`
 MERIDIAN_GID=1000           # set to the output of `id -g`
 MERIDIAN_PORT=8000
-ONLINE_LOOKUP=on            # "off" disables Tools > Suggest categories online (no data ever leaves the server)
 ```
 
 Or pass them inline: `MERIDIAN_DATA=/srv/ebooks MERIDIAN_UID=$(id -u) MERIDIAN_GID=$(id -g) docker compose up --build`.
@@ -141,7 +85,7 @@ docker compose up --build
 ```
 
 * Web UI: <http://localhost:8000/>
-* Swagger: <http://localhost:8000/docs> (ReDoc at `/redoc`)
+* Swagger: <http://localhost:8000/docs> (the raw spec is at `/openapi.json`)
 * Data lives in the data folder (`./data` by default: library files + `meridian.db`). Optional `./import` is mounted read-only at `/import` for server-side imports.
 
 ### Raspberry Pi: start automatically on boot
@@ -166,22 +110,47 @@ echo "MERIDIAN_GID=$(id -g)" >> .env
 docker compose up --build -d
 ```
 
-Check it: `docker compose ps` should show `meridian` as `running (healthy)`, and the UI is at `http://<pi-address>:8000/` (find the address with `hostname -I`).
-
-Test the boot behaviour with `sudo reboot`, then after a minute or two open the UI again.
-
-Useful commands (run in the project folder):
-
-Logs, stop/start, removing the container or image and updating are covered in [Managing the container](#managing-the-container).
+Check it: `docker compose ps` should show `meridian` as `running (healthy)`, and the UI is at `http://<pi-address>:8000/` (find the address with `hostname -I`). Test the boot behaviour with `sudo reboot`, then after a minute or two open the UI again. Logs, stop/start, removal and updates are in [Managing the container](#managing-the-container).
 
 Notes:
 * A container you stopped yourself with `docker compose stop` stays stopped after a reboot (that is what `unless-stopped` means). Use `docker compose start` to bring it back.
 * Keep `data` on the SD card only for light use. For a big library, mount a USB drive or SSD (e.g. at `/mnt/books`), `chown` it to your user, and set `MERIDIAN_DATA=/mnt/books/meridian` in `.env`. Make sure the drive is mounted at boot (an `/etc/fstab` entry with the `nofail` option) so Docker doesn't start the container against an empty folder.
-* `docker` works without `sudo` only after the `usermod` step and a fresh login.
 
 ### Raspberry Pi: 32-bit vs 64-bit OS
 
-A 64-bit OS (`uname -m` prints `aarch64`) is recommended. On 32-bit Raspberry Pi OS (`armv7l`) PyMuPDF has no prebuilt package, so the image builds without it: everything works, but PDFs get no embedded metadata, no first-page cover (a generated cover is shown) and metadata edits for PDFs go to the `-info.json` sidecar.
+Both work, including PDF metadata and covers (`pypdf` and `pypdfium2` ship wheels for `armv7l` and `aarch64`). A 64-bit OS (`uname -m` prints `aarch64`) is recommended for speed and memory.
+
+## Managing the container
+
+Run these in the project folder (next to `docker-compose.yml`). Your books and database live in the data folder (`./data` by default), not in the container or image, so none of the commands below delete them.
+
+```bash
+docker compose ps                      # is it running / healthy?
+docker compose logs -f                 # follow the logs live (Ctrl+C stops following, not the app)
+docker compose logs --tail 100         # last 100 lines
+docker compose logs --since 30m        # last 30 minutes
+docker compose logs -t | grep -i error # timestamps, filtered for errors
+
+docker compose stop                    # stop, keep the container
+docker compose start                   # start it again
+docker compose restart                 # restart (e.g. after changing .env)
+
+docker compose down                    # stop and remove the container (data folder is untouched)
+docker compose down --rmi local        # ...and the image too (frees disk space; the next `up --build` rebuilds it)
+docker image prune -f                  # optional: delete dangling layers left by old builds
+
+docker compose up --build -d           # update after pulling new code
+```
+
+**Start completely fresh** - this one **does delete your library**; back up the data folder first:
+
+```bash
+docker compose down --rmi local
+rm -rf ./data                          # or whatever MERIDIAN_DATA points to
+mkdir -p data
+```
+
+**Check you are running the new build.** The version and build number are shown under the logo (top left of the UI) and at `GET /api/version`. They come from `version.json` in the project root. Run `python scripts/bump_build.py` before building to increase the build number, then confirm the UI shows it. If it still shows the old number, the image was not rebuilt (use `docker compose build --no-cache`); if the number is new but the UI looks old, do a hard refresh (Ctrl+Shift+R).
 
 ## Features
 
@@ -189,16 +158,17 @@ A 64-bit OS (`uname -m` prints `aarch64`) is recommended. On 32-bit Raspberry Pi
 |---|---|
 | Upload EPUB, PDF, DOCX, MOBI, AZW3, FB2, TXT, CBZ… | `POST /api/books/upload` (see `app/config.py` for the full list) |
 | Upload whole folders recursively | `POST /api/books/upload-folder` takes files plus their relative paths (the UI uses the browser directory picker or drag-and-drop of folders). `.zip` archives are expanded recursively. `POST /api/import` imports a folder already on the server. Folder names can become categories. |
-| Import metadata JSON | Upload `*.json` (e.g. an exported `book-name-info.json`) alone, in a folder, in a `.zip`, or from the server import folder. It is matched to the book by `id`, then title (case-insensitive), then file name, and applied to that book. **Books are always processed before JSON files** (the UI uploads every book first, then the JSONs). Empty fields are filled in; if the JSON would change a value the book already has, nothing is applied and you get a `warning` listing each field's current vs. imported value. Tick "overwrite" (`overwrite_json=true`) to apply anyway. A category that was merely inferred from the upload folder name does not count as an existing value. |
-| Replace the cover | `PUT /api/books/{id}/cover` (or "Upload cover" in the book panel). Saved as `book-name-cover.jpg` in the book's folder, next to `book-name-info.json`, and always shown instead of the cover embedded in the book. The book file is untouched, the cover follows the file on rename and is included in the ZIP export. `DELETE /api/books/{id}/cover` reverts to the embedded cover. |
+| Import metadata JSON | Upload `*.json` (e.g. an exported `book-name-info.json`) alone, in a folder, in a `.zip`, or from the server import folder. It is matched to the book by `id`, then title (case-insensitive), then file name. **Books are always processed before JSON files.** Empty fields are filled in; if the JSON would change a value the book already has, nothing is applied and you get a `warning` listing each field's current vs. imported value. Tick "overwrite" (`overwrite_json=true`) to apply anyway. A category that was merely inferred from the upload folder name does not count as an existing value. |
+| Replace the cover | `PUT /api/books/{id}/cover` (or "Upload cover" in the book panel). Saved as `book-name-cover.jpg` in the book's folder, next to `book-name-info.json`, and always shown instead of the embedded cover. The book file is untouched, the cover follows the file on rename and is included in the ZIP export. `DELETE /api/books/{id}/cover` reverts to the embedded cover. |
 | Plex-like browser | Library is the landing page (format/category/sort filters, infinite scroll, series shown as one stacked tile that opens the series), Recently added, Authors, Categories, generated covers when a book has none, detail drawer |
+| List view and bulk edit | The grid/list switch above the library toggles a table with one column per metadata field; click a heading to sort by it. A coloured dot per row shows the cover's predominant colour (`GET /api/books/colors`). Tick rows (shift-click for a range, or "Select all N" for everything matching the current filter) and press **Bulk edit** to set category, sub-category, tags (add or replace), author, series, publisher, published, language or rating on all of them. It is saved in batches with a percent-complete bar; **Stop** cancels after the current batch. API: `POST /api/books/bulk-update`. The **Advanced** tab of the same dialog cleans up one field instead: pick the field, then an operation - lowercase, uppercase, capitalize, Title Case, replace words (leave "replace with" empty to remove them; whole words and match-case options), collapse multiple spaces, or trim - and press **Run**. The dialog closes and the progress bar appears above the table. Tags are transformed tag by tag, and books that would not change are not rewritten. API: `POST /api/books/bulk-transform`. |
 | Metadata search with wildcards | `GET /api/books?q=…` - `*` and `?` wildcards, `author:`/`title:`/`tag:`/`category:`/`format:`/`series:`/`isbn:`/`lang:`/`year:`/`file:` scopes, `"phrases"`, `-exclusions`. Example: `author:tolk* title:"*ring*" -format:pdf` |
 | UUID per book + MD5 duplicate control | UUID4 assigned at upload. The MD5 of the upload is unique-indexed; identical content is rejected. The hash is kept even after metadata is written into a file, so the original is still recognised. `GET /api/duplicates` and `POST /api/cleanup` (dry-run by default) remove duplicates, orphan folders and dangling records. |
 | Flat sharded storage | UUID hex split 4 chars at a time: `1234/5678/abcd/ef01/…/book-name.ext` (32 hex chars → 8 levels) |
 | Library export as ZIP | `GET /api/export?group_by=category` or `author` (optionally `format=`, `ids=`, `include_metadata=`) |
-| Metadata editing | `PATCH /api/books/{id}`. EPUB, PDF and DOCX get what they can hold **inside the file**; everything else goes into `book-name-info.json` next to the book. The response's `storage` field shows what went where. |
-| Fetch category and cover online | **Per book:** the **Fetch metadata** button in the book panel opens a dialog that shows the cover and each field as *Current* next to *New* (title, subtitle, author(s), category, sub-category, tags, publisher, published, language, ISBN, description - only fields that differ are listed; Google Books first, Open Library fills the gaps). Up to 6 covers are offered (3 from Google Books, 3 from Open Library) next to the current one. **Everything defaults to the current value**; pick what you want (tags can also be merged) and press *Apply* - only then is anything saved, and unsaved edits in the panel are kept. **In bulk:** **Tools > Suggest categories online**, with *Categories & tags* and *Covers* ticked separately, and a separate *Metadata* / *Cover* tick per book. A fetched cover is stored exactly like an uploaded one (`book-name-cover.jpg` next to the book, overriding the embedded cover), is only downloaded from Google Books / Open Library / archive.org over https, must be at least 100x140 px and is limited to 6 MB. API: `GET /api/lookup/metadata/{id}` (fields + candidate covers, saves nothing), `GET /api/lookup/cover-img/{key}`, `GET /api/lookup/candidates`, `POST /api/lookup/suggest` (`fields`, `overwrite`), `GET /api/lookup/cover/{id}`. Looks books up on **Google Books** (category and sub-category, e.g. `Fiction / Science Fiction / Space Opera`) and **Open Library** (subjects become tags) by ISBN, or by title and author when there is no ISBN. Results are a **preview**: each suggestion can be edited or unticked, and nothing is saved until you press *Accept selected*. Suggestions only fill fields that are empty, existing categories keep your spelling (`science fiction` becomes your `Science Fiction`), and titles must match exactly (a sequel never matches its first book). Only the title, author and ISBN are sent, and only when you press the button; lookups are throttled and cached, and an unreachable site is reported rather than failing. Set `ONLINE_LOOKUP=off` to disable it. |
+| Metadata editing | `PATCH /api/books/{id}` (many books at once: `POST /api/books/bulk-update`, `POST /api/books/bulk-transform`). EPUB, PDF and DOCX get what they can hold **inside the file**; everything else goes into `book-name-info.json` next to the book. The response's `storage` field shows what went where. |
 | Title ≠ filename | Editing the title never touches the file name. `POST /api/books/{id}/rename` renames the file (and its sidecar) separately. |
+| Themes and fonts | Ten themes (Vanilla, the default, plus Aurora, Neon, Sunset, Ocean, Emerald, Cyber, Paper, Blossom, Lavender), eleven open-source fonts and the system font, text size 80-130% (100% = 14.5px), cover border thickness and series grouping, all in Settings (sliders icon, top right) and saved per browser. The fonts are bundled with the app (Latin subset), so nothing is downloaded when you switch. `GET /api/books?group_series=true` returns the grouped view (`series_count` on each entry; filter with `series=` to list one series). |
 
 ### What is stored where
 
@@ -220,28 +190,31 @@ DATA_DIR=./data uvicorn app.main:app --reload
 
 ### Unit tests
 
-The backend has a [pytest](https://docs.pytest.org) suite in `tests/` (the online lookups run against a mocked network, so no internet is needed). The dependencies (`pytest`, `pytest-cov`, `httpx`) are in `requirements.txt`; the Docker image leaves them out.
+The backend has a [pytest](https://docs.pytest.org) suite in `tests/` (no network access is needed). Its dependencies (`pytest`, `pytest-cov`, `httpx`) are in `requirements.txt`; the Docker image leaves them out.
 
 ```bash
-pip install -r requirements.txt       # once
 python -m pytest                      # run everything
 ```
 
-* **One line per test** - `pytest.ini` turns on `-v`, so every test prints its own `PASSED` / `FAILED` line.
-* **95% coverage gate** - the same file adds `--cov=app --cov-fail-under=95`. Each run ends with a coverage table (uncovered lines listed) and **exits non-zero if total coverage of `app/` is below 95%**, which fails the build.
-* **CI** - `.github/workflows/tests.yml` runs `python -m pytest` on every push and pull request, so a drop below 95% shows up as a failed check.
-
-Handy variations:
+* **One line per test:** `pytest.ini` turns on `-v`, so each test prints its own `PASSED` / `FAILED` line.
+* **95% coverage gate:** the same file adds `--cov=app --cov-fail-under=95`. Each run ends with a coverage table (uncovered lines listed) and **exits non-zero if total coverage of `app/` is below 95%**, which fails the build.
+* **CI:** `.github/workflows/tests.yml` runs `python -m pytest` on every push and pull request.
 
 ```bash
-python -m pytest tests/test_lookup.py                  # one file (the coverage gate still applies, so it will fail on a partial run; add --no-cov to skip it)
+python -m pytest tests/test_textops.py --no-cov            # one file (a partial run would trip the coverage gate, so skip it)
 python -m pytest -k "bulk and not export" --no-cov     # tests matching a name
 python -m pytest --cov-report=html                     # browsable report in htmlcov/index.html
 ```
 
-Add tests next to the feature they cover (`tests/test_<area>.py`, shared fixtures in `tests/conftest.py`). New code without tests will pull coverage down and trip the gate.
+Add tests next to the feature they cover (`tests/test_<area>.py`, shared fixtures in `tests/conftest.py`).
 
-Regenerate the README screenshots (against an empty throwaway instance - the script adds demo books and refuses to run on a library that already has books):
+### Bundled third-party files
+
+The UI fonts (Latin subset, SIL Open Font License; licences in `app/static/fonts/licenses/`) and Swagger UI (Apache-2.0, `app/static/vendor/`) ship inside the repo (see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)). A maintainer can refresh them with `python scripts/update_bundled_assets.py` (needs internet; the app itself never does). After adding a font or weight, add its `@font-face` line to `app/static/css/fonts.css`. Characters outside the Latin range fall back to the system font.
+
+### Screenshots
+
+Regenerate the README screenshots against an empty throwaway instance (the script adds demo books and refuses to run on a library that already has books):
 
 ```bash
 DATA_DIR=./.demo-data uvicorn app.main:app --port 8000     # terminal 1
@@ -249,11 +222,21 @@ pip install playwright                                     # once (uses an insta
 python scripts/capture_screenshots.py                      # terminal 2 -> docs/screenshots/*.png
 ```
 
-Configuration (environment): `DATA_DIR` (default `./data`), `IMPORT_DIR` (default `./import`), `MAX_ARCHIVE_BYTES`.
+### Configuration and layout
+
+Environment: `DATA_DIR` (default `./data`), `IMPORT_DIR` (default `./import`), `MAX_ARCHIVE_BYTES` (see [Setting up the data folder](#setting-up-the-data-folder) for the Compose variables).
 
 Layout: `app/service.py` (ingest, edit, search, cleanup), `app/metadata.py` (EPUB/PDF/DOCX read & write), `app/search.py` (query parser), `app/routers/` (API), `app/static/` (UI - plain ES modules and native web components, no build step).
 
 ## Notes
 
+* **No outside requests, ever.** The UI, the fonts and the Swagger page at `/docs` are all served by the app itself, and every page carries a `Content-Security-Policy` that tells the browser not to talk to any other host (`tests/test_offline.py` guards this). ReDoc is therefore not offered: it insists on loading a badge image from another site.
+* Metadata is never looked up online: it is whatever is inside the files, an imported JSON, or what you type yourself (one book at a time, or many at once with Bulk edit).
 * No authentication is built in - put it behind a reverse proxy or VPN before exposing it.
-* The UI has ten themes, chosen in Settings (the sliders icon, top right) and saved per browser. **Vanilla** (white and light greys, the default) plus nine colourful ones: Aurora, Neon, Sunset, Ocean, Emerald, Cyber (dark) and Paper, Blossom, Lavender (light). Settings also controls the font (11 open-source SIL OFL families - Inter, DM Sans, Source Sans 3, IBM Plex Sans, Nunito, Poppins, Space Grotesk, Atkinson Hyperlegible, Lora, Merriweather, JetBrains Mono - plus the system font), text size (80-130%), cover border thickness, and whether series are grouped. Fonts load from Google Fonts on demand and fall back to system fonts when offline. `GET /api/books?group_series=true` returns the grouped view (`series_count` on each entry; filter with `series=` to list one series).
+
+## Legal
+
+* **Licence:** the project is MIT-licensed ([LICENSE](LICENSE)). The bundled fonts (SIL OFL), Swagger UI (Apache-2.0), icon styles and every Python dependency are listed with their licences in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+* **No copyleft dependencies.** PDF metadata and covers use pypdf (BSD) and pypdfium2 (Apache-2.0 / BSD), so nothing forces your copy of the app, or an image you build from it, under stricter terms than MIT.
+* **Your books:** Meridian stores and serves the files you give it and does nothing about copyright or DRM - it neither removes DRM nor supplies content. Keep only books you have the right to keep, and because there is no built-in authentication, do not expose a library to the public internet.
+* **Trademarks:** Plex, Raspberry Pi, Docker, Google Fonts and other names are trademarks of their owners and are used only to describe compatibility or style; the project is not affiliated with or endorsed by them.

@@ -1,5 +1,6 @@
 // Web components (light DOM, themed by app.css).
-import { api, esc, icon, toast, coverHTML, fmtBytes, emit, THEMES, FONTS, clampFs, getPref, setPref } from "./api.js";
+import { api, esc, icon, toast, coverHTML, fmtBytes, emit, THEMES, FONTS, clampFs, getPref, setPref,
+  progressHTML, setProgress, runBatches, batchMessage } from "./api.js";
 
 const EXT_OK = new Set("epub pdf docx doc odt rtf txt md html htm mobi azw azw3 kfx fb2 djvu cbz cbr cb7 lit chm pdb zip json".split(" "));
 const extOf = (n) => n.split(".").pop().toLowerCase();
@@ -72,7 +73,6 @@ class MxDrawer extends HTMLElement {
               <a class="btn primary" href="/api/books/${b.id}/download">${icon("download")}Download</a>
               ${b.format === "pdf" ? `<a class="btn" target="_blank" rel="noopener" href="/api/books/${b.id}/download?inline=true">${icon("book")}Read</a>` : ""}
               <button class="btn" data-act="cover">${icon("image")}${b.cover_source === "user" ? "Replace cover" : "Upload cover"}</button>
-              <button class="btn" data-act="fetch-meta" title="Compare this book with Google Books / Open Library and pick what to keep">${icon("search")}Fetch metadata</button>
               ${b.cover_source === "user" ? `<button class="btn" data-act="uncover" title="Go back to the cover embedded in the book">Remove custom cover</button>` : ""}
               <input type="file" accept="image/*" hidden id="cover-in">
             </div>
@@ -187,7 +187,6 @@ class MxDrawer extends HTMLElement {
     if (un) un.onclick = async () => {
       try { this.book = await api(`/books/${b.id}/cover`, { method: "DELETE" }); emit("book-updated", this.book); this.renderKeepingEdits(); toast("Custom cover removed"); } catch {}
     };
-    this.bindLookup();
     this.querySelector('[data-act="delete"]').onclick = async () => {
       if (!confirm(`Delete “${b.title}” and its files permanently?`)) return;
       try {
@@ -197,9 +196,9 @@ class MxDrawer extends HTMLElement {
     };
   }
 
-  /** Re-render without losing metadata the user has typed but not saved yet (fields in `skip` were just saved). */
-  renderKeepingEdits(skip = []) {
-    const snap = [...this.querySelectorAll("#mform [name]")].filter((e) => !skip.includes(e.name)).map((e) => [e.name, e.value]);
+  /** Re-render (after a cover change) without losing metadata the user has typed but not saved yet. */
+  renderKeepingEdits() {
+    const snap = [...this.querySelectorAll("#mform [name]")].map((e) => [e.name, e.value]);
     this.render();
     for (const [name, value] of snap) {
       const el = this.querySelector(`#mform [name="${name}"]`);
@@ -207,131 +206,29 @@ class MxDrawer extends HTMLElement {
     }
   }
 
-  /** "Fetch metadata": compare with Google Books / Open Library in a dialog and apply only what the user picks. */
-  bindLookup() {
-    const btn = this.querySelector('[data-act="fetch-meta"]');
-    lookupEnabled().then((on) => { if (!on) btn.remove(); });
-    btn.onclick = () => {
-      const current = Object.fromEntries([...this.querySelectorAll("#mform [name]")].map((e) => [e.name, e.value]));
-      document.getElementById("fetchmeta").open({
-        book: this.book, current,
-        applied: (book, skip) => { this.book = book; emit("book-updated", book); this.renderKeepingEdits(skip); },
-      });
-    };
-  }
 }
 customElements.define("mx-drawer", MxDrawer);
-
-let _lookupOn;
-const lookupEnabled = () => (_lookupOn ||= api("/lookup/status", { quiet: true }).then((s) => s.enabled).catch(() => { _lookupOn = null; return false; }));
-
-// ------------------------------------------------------------------ <mx-fetchmeta>
-const FETCH_FIELDS = [["title", "Title"], ["subtitle", "Subtitle"], ["author", "Author(s)"], ["category", "Category"], ["subcategory", "Sub-category"],
-  ["tags", "Tags"], ["publisher", "Publisher"], ["published", "Published"], ["language", "Language"], ["isbn", "ISBN"], ["description", "Description"]];
-const asText = (v) => (Array.isArray(v) ? v.join(", ") : String(v ?? "").trim());
-const splitTags = (v) => (Array.isArray(v) ? v : String(v || "").split(",")).map((t) => t.trim()).filter(Boolean);
-const tagKey = (v) => [...new Set(splitTags(v).map((t) => t.toLowerCase()))].sort().join("|");
-const squash = (name, v) => (name === "isbn" ? asText(v).replace(/[^0-9x]/gi, "") : asText(v)).toLowerCase();
-const sameValue = (name, a, b) => (name === "tags" ? tagKey(a) === tagKey(b) : squash(name, a) === squash(name, b));
-const mergeTags = (have, add) => [...splitTags(have), ...splitTags(add).filter((t) => !splitTags(have).some((h) => h.toLowerCase() === t.toLowerCase()))];
-
-/** Compare a book with what Google Books / Open Library know; every choice defaults to the current value. */
-class MxFetchMeta extends HTMLElement {
-  open(ctx) {
-    this.ctx = ctx;
-    this.classList.add("open");
-    this._esc = (e) => { if (e.key === "Escape") { e.stopImmediatePropagation(); this.close(); } };
-    document.addEventListener("keydown", this._esc, true);
-    this.frame(`<div class="fm-wait"><span class="spinner"></span><div><b>Looking up “${esc(ctx.book.title)}”…</b>
-      <div class="muted small">Asking Google Books and Open Library and downloading a few covers - this takes a few seconds.</div></div></div>`,
-      `<button class="btn" id="fm-cancel">Cancel</button>`);
-    const mine = (this.token = {});
-    api(`/lookup/metadata/${ctx.book.id}`, { quiet: true }).then((r) => { if (this.token === mine) this.show(r); })
-      .catch((e) => { if (this.token === mine) this.frame(`<p class="muted">${esc(e.message || "Lookup failed.")}</p>`, `<button class="btn primary" id="fm-cancel">Close</button>`); });
-  }
-  close() {
-    this.token = null; this.classList.remove("open"); this.innerHTML = "";
-    document.removeEventListener("keydown", this._esc, true);
-  }
-  frame(body, actions, sub = "") {
-    this.innerHTML = `<div class="scrim" style="position:absolute;inset:0;background:rgba(2,2,10,.6);backdrop-filter:blur(4px)"></div>
-      <div class="dialog glass fm" role="dialog" aria-label="Fetch metadata">
-        <h2>Fetch metadata</h2><div class="muted small">${sub || esc(this.ctx.book.title)}</div>
-        <div class="fm-body">${body}</div><div class="dialog-actions">${actions}</div></div>`;
-    this.querySelector(".scrim").onclick = () => this.close();
-    this.querySelector("#fm-cancel").onclick = () => this.close();
-  }
-
-  show(r) {
-    const { book, current } = this.ctx;
-    const rows = FETCH_FIELDS.filter(([k]) => r.fields[k] != null && r.fields[k].length);
-    const diff = rows.filter(([k]) => !sameValue(k, current[k], r.fields[k]));
-    const same = rows.filter(([k]) => sameValue(k, current[k], r.fields[k]));
-    const val = (v) => (asText(v) ? esc(asText(v)) : `<i class="muted">empty</i>`);
-    const cell = (name, choice, html, cls = "") => `<label class="fm-opt${cls}"><input type="radio" name="f-${name}" value="${choice}"${choice === "keep" ? " checked" : ""}><span class="fm-val">${html}</span></label>`;
-    const meta = diff.length ? `<div class="fm-grid"><div class="fm-h">Field</div><div class="fm-h">Current</div><div class="fm-h">New</div>
-      ${diff.map(([k, label]) => {
-        const both = k === "tags" && splitTags(current.tags).length ? mergeTags(current.tags, r.fields.tags) : null;
-        return `<div class="fm-f">${label}</div>${cell(k, "keep", val(current[k]))}
-          <div class="fm-new">${cell(k, "new", val(r.fields[k]))}${both ? cell(k, "merge", `<small class="muted">Both:</small> ${esc(both.join(", "))}`) : ""}</div>`;
-      }).join("")}</div>`
-      : `<p class="muted">${rows.length ? "Everything found online already matches this book." : "No metadata found online for this book."}</p>`;
-
-    const cur = book.has_cover ? `<img src="/api/books/${book.id}/cover?v=${encodeURIComponent(book.updated_at)}" alt="Current cover">` : `<div class="fm-none">No cover</div>`;
-    const covers = `<div class="fm-covers">
-      <label class="fm-cv"><input type="radio" name="cover" value="current" checked><div class="fm-img">${cur}</div><span class="small"><b>Current</b></span></label>
-      ${r.covers.map((c, i) => `<label class="fm-cv"><input type="radio" name="cover" value="${c.key}"><div class="fm-img"><img src="/api/lookup/cover-img/${c.key}" alt="Cover option ${i + 1}"></div>
-        <span class="small"><b>${esc(c.source)}</b><br><span class="muted">${c.width}×${c.height}${c.confidence === "isbn" ? " · ISBN" : ""}</span></span></label>`).join("")}</div>
-      ${r.covers.length ? (r.covers.length < 3 ? `<p class="muted small">Only ${r.covers.length} cover${r.covers.length > 1 ? "s" : ""} found online for this book.</p>` : "")
-        : `<p class="muted small">No cover found online for this book.</p>`}`;
-
-    this.frame(`<h3 class="fm-h3">Cover</h3>${covers}<h3 class="fm-h3">Metadata</h3>${meta}
-      ${same.length ? `<p class="muted small">Already the same: ${same.map(([, l]) => l).join(", ")}.</p>` : ""}`,
-      `<span class="muted small" id="fm-count" style="margin-right:auto"></span><button class="btn" id="fm-cancel">Cancel</button><button class="btn primary" id="fm-apply">${icon("save")}Apply</button>`,
-      `${esc(r.source || "No match")}${r.matched ? ` · matched “${esc(r.matched)}”` : ""}${r.confidence ? ` · ${r.confidence === "isbn" ? "ISBN match" : "title + author match"}` : ""} · nothing changes until you press Apply`);
-
-    const apply = this.querySelector("#fm-apply"), count = this.querySelector("#fm-count");
-    const picks = () => {
-      const fields = {};
-      for (const [k] of diff) {
-        const v = this.querySelector(`input[name="f-${k}"]:checked`)?.value;
-        if (v === "new") fields[k] = k === "tags" ? splitTags(r.fields.tags) : r.fields[k];
-        if (v === "merge") fields[k] = mergeTags(current.tags, r.fields.tags);
-      }
-      return { fields, cover: this.querySelector('input[name="cover"]:checked')?.value };
-    };
-    const refresh = () => {
-      const p = picks(), n = Object.keys(p.fields).length + (p.cover !== "current" ? 1 : 0);
-      apply.disabled = !n;
-      count.textContent = n ? `${n} change${n > 1 ? "s" : ""} selected` : "Nothing selected - the current values are kept";
-    };
-    this.querySelector(".fm-body").addEventListener("change", refresh);
-    refresh();
-    apply.onclick = async () => {
-      const p = picks(); apply.disabled = true; apply.textContent = "Saving…";
-      try {
-        let saved = book;
-        if (Object.keys(p.fields).length) saved = await api(`/books/${book.id}`, { method: "PATCH", json: p.fields });
-        if (p.cover !== "current") {
-          const res = await fetch(`/api/lookup/cover-img/${p.cover}`);
-          if (!res.ok) throw new Error("That cover is no longer available - fetch the metadata again.");
-          const fd = new FormData(); fd.append("file", await res.blob(), "cover.jpg");
-          saved = await api(`/books/${book.id}/cover`, { method: "PUT", body: fd });
-        }
-        this.ctx.applied(saved, Object.keys(p.fields));
-        this.close(); toast("Saved" + (p.cover !== "current" ? " · cover stored next to the book" : ""));
-      } catch (e) { toast(e.message || "Could not save", "err"); apply.disabled = false; apply.textContent = "Apply"; }
-    };
-    (apply.disabled ? this.querySelector("#fm-cancel") : apply).focus();
-  }
-}
-customElements.define("mx-fetchmeta", MxFetchMeta);
 
 // ------------------------------------------------------------------ <mx-bulkedit>
 const BULK_FIELDS = [["category", "Category"], ["subcategory", "Sub-category"], ["tags", "Tags"], ["author", "Author(s)"],
   ["series", "Series"], ["publisher", "Publisher"], ["published", "Published"], ["language", "Language"], ["rating", "Rating"]];
 
-/** Set the same fields on many books: tick a field to change it, leave it unticked to keep each book's own value. */
+/** Edit many books at once. Two modes: "Set fields" (the same value on every book) and "Advanced" (clean up one field with an
+ *  operation such as Title Case or find/replace). Set fields saves with progress inside the dialog; Advanced closes the dialog and
+ *  reports progress in the bar above the table (ctx.advanced). */
+const ADV_FIELDS = [["title", "Title"], ["subtitle", "Subtitle"], ["author", "Author(s)"], ["series", "Series"], ["category", "Category"],
+  ["subcategory", "Sub-category"], ["publisher", "Publisher"], ["tags", "Tags (each tag)"], ["language", "Language"], ["description", "Description"]];
+// [value, label, what it does]
+const ADV_OPS = [
+  ["lowercase", "Lowercase", "the Lord OF the Rings  →  the lord of the rings"],
+  ["uppercase", "Uppercase", "dune messiah  →  DUNE MESSIAH"],
+  ["capitalize", "Capitalize (first letter only)", "the LORD of the rings  →  The lord of the rings"],
+  ["titlecase", "Title Case", "the lord of the rings  →  The Lord of the Rings (small words like of/the stay lowercase)"],
+  ["replace", "Replace words (empty = remove)", "Find a word or phrase and swap it for something else. Leave “Replace with” empty to remove it."],
+  ["collapse_spaces", "Replace multiple spaces by one", "Too    many   spaces  →  Too many spaces"],
+  ["trim", "Trim spaces at both ends", "“  padded  ”  →  “padded”"],
+];
+
 class MxBulkEdit extends HTMLElement {
   async open(ctx) {
     this.ctx = ctx;
@@ -348,20 +245,59 @@ class MxBulkEdit extends HTMLElement {
     this.innerHTML = `<div class="scrim" style="position:absolute;inset:0;background:rgba(2,2,10,.6);backdrop-filter:blur(4px)"></div>
       <div class="dialog glass bk" role="dialog" aria-label="Edit ${n} books">
         <h2>Edit ${n} book${n === 1 ? "" : "s"}</h2>
-        <div class="muted small">Tick the fields to change. Unticked fields keep each book's own value. A ticked field left empty is cleared.</div>
-        <div class="bk-grid">${BULK_FIELDS.map(([k, label]) => `<label class="check bk-on"><input type="checkbox" data-on="${k}"><span>${label}</span></label>
-          <div class="bk-in">${input(k)}${k === "tags" ? `<div class="bk-mode small"><label class="check"><input type="radio" name="tmode" value="add" checked><span>Add to each book's tags</span></label>
-            <label class="check"><input type="radio" name="tmode" value="replace"><span>Replace all tags</span></label></div>` : ""}</div>`).join("")}</div>
-        <datalist id="bk-cats">${cats.map((c) => `<option value="${esc(c.name)}">`).join("")}</datalist>
-        <div id="bk-prog" hidden><div class="progress" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><i></i></div>
-          <div class="small muted" id="bk-prog-t"></div></div>
+        <div class="seg bk-tabs" role="tablist"><button class="btn sm on" role="tab" data-mode="set" aria-selected="true">Set fields</button><button class="btn sm" role="tab" data-mode="adv" aria-selected="false">Advanced</button></div>
+        <div id="bk-set">
+          <div class="muted small">Tick the fields to change. Unticked fields keep each book's own value. A ticked field left empty is cleared.</div>
+          <div class="bk-grid">${BULK_FIELDS.map(([k, label]) => `<label class="check bk-on"><input type="checkbox" data-on="${k}"><span>${label}</span></label>
+            <div class="bk-in">${input(k)}${k === "tags" ? `<div class="bk-mode small"><label class="check"><input type="radio" name="tmode" value="add" checked><span>Add to each book's tags</span></label>
+              <label class="check"><input type="radio" name="tmode" value="replace"><span>Replace all tags</span></label></div>` : ""}</div>`).join("")}</div>
+          <datalist id="bk-cats">${cats.map((c) => `<option value="${esc(c.name)}">`).join("")}</datalist>
+          <div id="bk-prog" hidden>${progressHTML()}<div class="small muted" id="bk-prog-t"></div></div>
+        </div>
+        <div id="bk-adv" hidden>
+          <div class="muted small">Clean up one field on all ${n} books. Books that would not change are left alone.</div>
+          <div class="bk-grid">
+            <span class="bk-on">Field</span><select class="in" id="ad-field">${ADV_FIELDS.map(([k, l]) => `<option value="${k}">${l}</option>`).join("")}</select>
+            <span class="bk-on">Operation</span><select class="in" id="ad-op">${ADV_OPS.map(([k, l]) => `<option value="${k}">${l}</option>`).join("")}</select>
+            <div id="ad-params" class="bk-params" hidden>
+              <label class="field"><span>Find (word or phrase)</span><input class="in" id="ad-find" autocomplete="off"></label>
+              <label class="field"><span>Replace with (leave empty to remove)</span><input class="in" id="ad-with" autocomplete="off"></label>
+              <div class="bk-mode small"><label class="check"><input type="checkbox" id="ad-whole" checked><span>Whole words only</span></label>
+                <label class="check"><input type="checkbox" id="ad-case"><span>Match case</span></label></div>
+            </div>
+          </div>
+          <p class="muted small" id="ad-help"></p>
+        </div>
         <div class="dialog-actions"><span class="muted small" id="bk-count" style="margin-right:auto"></span>
-          <button class="btn" id="bk-cancel">Cancel</button><button class="btn primary" id="bk-apply">${icon("save")}Apply to ${n}</button></div>
+          <button class="btn" id="bk-cancel">Cancel</button>
+          <button class="btn primary" id="bk-apply">${icon("save")}Apply to ${n}</button>
+          <button class="btn primary" id="bk-run" hidden>${icon("settings")}Run on ${n}</button></div>
       </div>`;
-    const $ = (s) => this.querySelector(s), apply = $("#bk-apply");
+    const $ = (s) => this.querySelector(s), apply = $("#bk-apply"), run = $("#bk-run");
     $(".scrim").onclick = $("#bk-cancel").onclick = () => this.close();
+
+    // ---- mode switch
+    let mode = "set";
+    const setMode = (m) => {
+      mode = m;
+      this.querySelectorAll("[data-mode]").forEach((b) => { const on = b.dataset.mode === m; b.classList.toggle("on", on); b.setAttribute("aria-selected", on); });
+      $("#bk-set").hidden = m !== "set"; $("#bk-adv").hidden = m !== "adv";
+      apply.hidden = m !== "set"; run.hidden = m !== "adv";
+      refresh();
+    };
+    this.querySelectorAll("[data-mode]").forEach((b) => (b.onclick = () => setMode(b.dataset.mode)));
+
+    // ---- Set fields
     const ticked = () => BULK_FIELDS.map(([k]) => k).filter((k) => $(`[data-on="${k}"]`).checked);
     const refresh = () => {
+      if (mode === "adv") {
+        const op = $("#ad-op").value;
+        $("#ad-params").hidden = op !== "replace";
+        $("#ad-help").textContent = ADV_OPS.find(([k]) => k === op)[2];
+        run.disabled = op === "replace" && !$("#ad-find").value;
+        $("#bk-count").textContent = run.disabled ? "Enter the word to find" : "The dialog closes and progress is shown above the table";
+        return;
+      }
       const t = ticked();
       for (const [k] of BULK_FIELDS) $(`[data-in="${k}"]`).disabled = !t.includes(k);
       const clearing = t.filter((k) => k !== "rating" && !$(`[data-in="${k}"]`).value.trim());
@@ -369,46 +305,41 @@ class MxBulkEdit extends HTMLElement {
       $("#bk-count").textContent = t.length ? `${t.length} field${t.length > 1 ? "s" : ""} will change${clearing.length ? ` · ${clearing.join(", ")} will be cleared` : ""}` : "Nothing ticked";
     };
     this.querySelectorAll("[data-on]").forEach((c) => (c.onchange = () => { refresh(); if (c.checked) $(`[data-in="${c.dataset.on}"]`).focus(); }));
-    this.querySelectorAll("[data-in]").forEach((i) => i.addEventListener("input", refresh));
+    this.querySelectorAll("[data-in], #ad-op, #ad-find").forEach((i) => i.addEventListener("input", refresh));
     refresh();
+
     apply.onclick = async () => {
       const fields = {};
       for (const k of ticked()) { const v = $(`[data-in="${k}"]`).value; fields[k] = k === "rating" ? Number(v) : v.trim(); }
       const tags_mode = this.querySelector('[name="tmode"]:checked')?.value || "replace";
-      // Saved in batches so the bar reflects real progress (each book is written to its file or sidecar).
-      const BATCH = 10, done = { updated: 0, failed: [], books: [] }, total = ctx.ids.length;
-      const bar = $("#bk-prog .progress"), fill = bar.querySelector("i"), text = $("#bk-prog-t"), cancel = $("#bk-cancel");
-      const paint = (n) => {
-        const pct = Math.round((n / total) * 100);
-        fill.style.width = pct + "%"; bar.setAttribute("aria-valuenow", pct);
-        text.textContent = `${pct}% · ${n} of ${total} books`;
-        apply.textContent = `Saving… ${pct}%`;
-      };
-      this.running = true; this.stop = false;
-      $("#bk-prog").hidden = false; this.querySelector(".bk-grid").classList.add("busy");
-      apply.disabled = true; cancel.textContent = "Stop"; paint(0);
-      let error = null, i = 0;
-      try {
-        for (; i < total && !this.stop; i += BATCH) {
-          const res = await api("/books/bulk-update", { json: { ids: ctx.ids.slice(i, i + BATCH), fields, tags_mode }, quiet: true });
-          done.updated += res.updated; done.failed.push(...res.failed); done.books.push(...res.books);
-          paint(Math.min(i + BATCH, total));
-        }
-      } catch (e) { error = e; }
-      const stopped = this.stop || error;
+      const total = ctx.ids.length, bar = $("#bk-prog .progress"), text = $("#bk-prog-t"), cancel = $("#bk-cancel");
+      const show = (done) => { const pct = setProgress(bar, done, total); text.textContent = `${pct}% · ${done} of ${total} books`; apply.textContent = `Saving… ${pct}%`; };
+      this.running = true; this.stop = false;                       // Esc / Stop = finish the current batch, then stop
+      $("#bk-prog").hidden = false; $("#bk-set .bk-grid").classList.add("busy");
+      apply.disabled = true; cancel.textContent = "Stop"; show(0);
+      const r = await runBatches(ctx.ids, 10, (chunk) => api("/books/bulk-update", { json: { ids: chunk, fields, tags_mode }, quiet: true }),
+        { onProgress: show, shouldStop: () => this.stop });
       this.running = false;
-      if (done.updated) ctx.applied(done);            // rows for the books that did save
-      if (!stopped) { bar.classList.add("done"); text.textContent = `100% · ${total} of ${total} books`; await new Promise((r) => setTimeout(r, 450)); }
+      if (r.updated) ctx.applied(r);                                // rows for the books that did save
+      if (!r.stopped) { bar.classList.add("done"); text.textContent = `100% · ${total} of ${total} books`; await new Promise((res) => setTimeout(res, 450)); }
       this.close();
-      const bad = done.failed.length;
-      const msg = `Updated ${done.updated} book${done.updated === 1 ? "" : "s"}${bad ? ` · ${bad} failed` : ""}`
-        + (error ? ` · stopped: ${error.message || "error"}` : this.stop ? ` · stopped, ${total - Math.min(i, total)} not changed` : "");
-      toast(msg, bad || stopped ? "err" : undefined);
+      toast(batchMessage(r, total), r.failed.length || r.stopped ? "err" : undefined);
+    };
+
+    // ---- Advanced: close the dialog, the page shows the progress
+    run.onclick = () => {
+      const field = $("#ad-field").value, op = $("#ad-op").value;
+      ctx.advanced({
+        label: `${ADV_FIELDS.find(([k]) => k === field)[1]}: ${ADV_OPS.find(([k]) => k === op)[1]}`,
+        body: { field, operation: op, find: $("#ad-find").value, replace_with: $("#ad-with").value,
+                case_sensitive: $("#ad-case").checked, whole_words: $("#ad-whole").checked },
+      });
+      this.close();
     };
     $("[data-on]").focus();
   }
   close() {
-    if (this.running) { this.stop = true; return; }   // Esc / Cancel during a save = stop after the current batch
+    if (this.running) { this.stop = true; return; }
     this.classList.remove("open"); this.innerHTML = "";
     document.removeEventListener("keydown", this._esc, true);
   }

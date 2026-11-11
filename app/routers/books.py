@@ -5,7 +5,7 @@ from fastapi import APIRouter, File, HTTPException, Query, Response, UploadFile
 from fastapi.responses import FileResponse
 
 from .. import service
-from ..schemas import Book, BookPage, BookUpdate, BulkResult, BulkUpdate, RenameFile
+from ..schemas import Book, BookPage, BookUpdate, BulkResult, BulkTransform, BulkUpdate, RenameFile
 
 router = APIRouter(prefix="/books", tags=["Books"])
 
@@ -131,6 +131,20 @@ def update_book(book_id: str, body: BookUpdate):
 def bulk_update(body: BulkUpdate):
     try:
         return service.bulk_update(body.ids, body.fields.model_dump(exclude_unset=True), body.tags_mode)
+    except service.BadRequest as e:
+        raise HTTPException(400, str(e))
+
+
+@router.post(
+    "/bulk-transform", response_model=BulkResult, summary="Clean up one text field of many books (advanced bulk edit)",
+    description=("Applies one operation to `field` of every book in `ids`: `lowercase`, `uppercase`, `capitalize`, `titlecase`, "
+                 "`replace` (word/phrase `find` -> `replace_with`, empty removes it), `collapse_spaces` or `trim`. "
+                 "`tags` are transformed tag by tag. Books that would not change are counted in `unchanged` and not rewritten."),
+)
+def bulk_transform(body: BulkTransform):
+    try:
+        return service.bulk_transform(body.ids, body.field, body.operation, find=body.find, replace_with=body.replace_with,
+                                      case_sensitive=body.case_sensitive, whole_words=body.whole_words)
     except service.BadRequest as e:
         raise HTTPException(400, str(e))
 

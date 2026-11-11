@@ -37,6 +37,7 @@ export async function api(path, opts = {}) {
   return res.status === 204 ? null : res.json();
 }
 
+// Outline icons in the style of (and in places matching) Feather (MIT) and Lucide (ISC); notices in THIRD_PARTY_NOTICES.md
 const ICONS = {
   home: "M3 11l9-8 9 8v10a1 1 0 0 1-1 1h-5v-7H9v7H4a1 1 0 0 1-1-1z",
   clock: "M12 7v5l3 2 M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18z",
@@ -98,6 +99,32 @@ export async function coverColors(books) {
   }
   return Object.fromEntries(books.map((b) => [b.id, _colors.get(key(b)) || fallbackColor(b)]));
 }
+
+// ---- batched bulk operations with a percent-complete bar (used by "Set fields" and "Advanced" bulk edit)
+export const progressHTML = () => `<div class="progress" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><i></i></div>`;
+export function setProgress(bar, done, total) {
+  const pct = Math.round((done / total) * 100);
+  bar.querySelector("i").style.width = pct + "%";
+  bar.setAttribute("aria-valuenow", pct);
+  return pct;
+}
+/** Send `ids` to `call(chunk)` a few at a time. Merges the {updated, unchanged, failed, books} answers and reports progress;
+ *  an error or `shouldStop()` ends the run early, keeping what was saved so far. */
+export async function runBatches(ids, size, call, { onProgress, shouldStop }) {
+  const out = { updated: 0, unchanged: 0, failed: [], books: [], error: null };
+  let i = 0;
+  try {
+    for (; i < ids.length && !shouldStop(); i += size) {
+      const r = await call(ids.slice(i, i + size));
+      out.updated += r.updated; out.unchanged += r.unchanged || 0; out.failed.push(...r.failed); out.books.push(...r.books);
+      onProgress(Math.min(i + size, ids.length));
+    }
+  } catch (e) { out.error = e; }
+  return { ...out, stopped: shouldStop() || !!out.error, remaining: Math.max(0, ids.length - i) };
+}
+export const batchMessage = (r, total) => `Updated ${r.updated} book${r.updated === 1 ? "" : "s"}`
+  + (r.unchanged ? ` · ${r.unchanged} already fine` : "") + (r.failed.length ? ` · ${r.failed.length} failed` : "")
+  + (r.error ? ` · stopped: ${r.error.message || "error"}` : r.stopped ? ` · stopped, ${r.remaining} not processed` : "");
 
 export const emit = (name, detail) => document.dispatchEvent(new CustomEvent(name, { detail }));
 

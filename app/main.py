@@ -2,14 +2,15 @@ import json
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.openapi.docs import get_swagger_ui_html
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from . import __version__
 from .config import settings
 from .db import init_db
-from .routers import books, library, lookup, upload
+from .routers import books, library, upload
 
 STATIC = Path(__file__).parent / "static"
 
@@ -32,7 +33,6 @@ TAGS = [
     {"name": "Upload", "description": "Single files, folder trees, archives and server-side imports."},
     {"name": "Export", "description": "Library export as ZIP."},
     {"name": "Library", "description": "Facets, stats, duplicate detection and cleanup."},
-    {"name": "Lookup", "description": "Suggest categories and tags from public sites (Google Books, Open Library). Nothing is saved automatically."},
 ]
 
 
@@ -45,13 +45,30 @@ async def lifespan(_: FastAPI):
     yield
 
 
+# /docs is served below from bundled files (the FastAPI default loads Swagger UI from a CDN); ReDoc is not offered because it
+# insists on loading a badge image from another host
 app = FastAPI(title="Meridian Ebooks", version=__version__, description=DESCRIPTION,
-              openapi_tags=TAGS, lifespan=lifespan)
+              openapi_tags=TAGS, lifespan=lifespan, docs_url=None, redoc_url=None)
+
+# Pages may only load things from this server. Together with the bundled fonts and docs assets this means the app
+# never contacts another host, and the browser enforces it.
+CSP = ("default-src 'self'; img-src 'self' data: blob:; font-src 'self'; connect-src 'self'; "
+       "style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; worker-src 'self'; "
+       "object-src 'none'; base-uri 'self'; form-action 'self'")
+
+
+@app.middleware("http")
+async def content_security_policy(request: Request, call_next):
+    response = await call_next(request)
+    if response.headers.get("content-type", "").startswith("text/html"):     # the pages, not the book downloads
+        response.headers["Content-Security-Policy"] = CSP
+    return response
 
 app.include_router(books.router, prefix="/api")
 app.include_router(upload.router, prefix="/api")
 app.include_router(library.router, prefix="/api")
-app.include_router(lookup.router, prefix="/api")
+
+
 class NoCacheStatic(StaticFiles):
     """Always revalidate, so a rebuilt image shows up on a normal reload (ETag keeps it cheap)."""
 
@@ -75,6 +92,13 @@ def version():
     except (OSError, ValueError):
         pass
     return JSONResponse(info, headers={"Cache-Control": "no-store"})
+
+
+@app.get("/docs", include_in_schema=False)
+def swagger_ui():
+    return get_swagger_ui_html(openapi_url="/openapi.json", title=f"{app.title} - Swagger UI",
+                               swagger_js_url="/static/vendor/swagger-ui-bundle.js", swagger_css_url="/static/vendor/swagger-ui.css",
+                               swagger_favicon_url="/static/favicon.svg")
 
 
 @app.get("/", include_in_schema=False)

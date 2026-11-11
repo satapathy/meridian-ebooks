@@ -11,6 +11,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from . import metadata as md
+from . import textops
 from .config import SUPPORTED_EXTENSIONS, settings
 from .db import db
 from .search import parse_query
@@ -336,6 +337,29 @@ def bulk_update(ids: list[str], patch: dict, tags_mode: str = "replace") -> dict
         except BadRequest as exc:
             failed.append({"id": bid, "error": str(exc)})
     return {"updated": len(books), "failed": failed, "books": books}
+
+
+def bulk_transform(ids: list[str], field: str, operation: str, *, find: str = "", replace_with: str = "",
+                   case_sensitive: bool = False, whole_words: bool = True) -> dict:
+    """Run one text operation (lowercase, titlecase, find/replace...) on one field of many books.
+    Books whose value would not change are left untouched; tags are transformed one by one."""
+    if operation == "replace" and not find:
+        raise BadRequest("Say which word to replace")
+    opts = dict(find=find, replacement=replace_with, case_sensitive=case_sensitive, whole_words=whole_words)
+    books, failed, unchanged = [], [], 0
+    for bid in dict.fromkeys(ids):
+        try:
+            current = get_book(bid)[field]
+            new = [textops.apply(operation, t, **opts) for t in current] if isinstance(current, list) else textops.apply(operation, current or "", **opts)
+            if new == current:
+                unchanged += 1
+                continue
+            books.append(update_book(bid, {field: new}))
+        except BookNotFound:
+            failed.append({"id": bid, "error": "Book not found"})
+        except BadRequest as exc:
+            failed.append({"id": bid, "error": str(exc)})
+    return {"updated": len(books), "unchanged": unchanged, "failed": failed, "books": books}
 
 
 def rename_file(book_id: str, new_name: str) -> dict:

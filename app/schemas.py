@@ -71,6 +71,16 @@ class BulkUpdate(BaseModel):
     tags_mode: Literal["replace", "add"] = Field("replace", description="With `add`, `fields.tags` are appended to each book's own tags")
 
 
+class BulkTransform(BaseModel):
+    ids: list[str] = Field(..., min_length=1, max_length=2000, description="Books to change")
+    field: Literal["title", "subtitle", "author", "series", "category", "subcategory", "publisher", "tags", "language", "description"]
+    operation: Literal["lowercase", "uppercase", "capitalize", "titlecase", "replace", "collapse_spaces", "trim"]
+    find: str = Field("", description="`replace` only: the word or phrase to look for (literal text, not a pattern)")
+    replace_with: str = Field("", description="`replace` only: the replacement; empty removes the text")
+    case_sensitive: bool = False
+    whole_words: bool = Field(True, description="`replace` only: do not match inside longer words")
+
+
 class BulkFailure(BaseModel):
     id: str
     error: str
@@ -78,6 +88,7 @@ class BulkFailure(BaseModel):
 
 class BulkResult(BaseModel):
     updated: int
+    unchanged: int = Field(0, description="Books whose value did not change (nothing was written for them)")
     failed: list[BulkFailure]
     books: list[Book] = Field(description="The updated books")
 
