@@ -351,7 +351,6 @@ table.books td { padding: 4px 10px; border-bottom: 1px solid var(--line); vertic
 table.books tbody tr { cursor: pointer; outline: 0; transition: background .12s; }
 table.books tbody tr:hover, table.books tbody tr:focus-visible { background: color-mix(in srgb, var(--a1) 10%, transparent); }
 table.books tbody tr:focus-visible { box-shadow: inset 3px 0 0 var(--a1); }
-table.books td.c-cover, table.books th.c-cover { width: 30px; padding-right: 0; padding-left: 4px; }
 table.books td.c-title { min-width: 200px; max-width: 320px; }
 table.books td.c-wide { min-width: 150px; }
 table.books td.c-num { text-align: right; font-variant-numeric: tabular-nums; }
@@ -378,8 +377,8 @@ table.books tbody tr.sel { background: color-mix(in srgb, var(--a1) 16%, transpa
 .btn[hidden] { display: none; }
 
 /* ---- List view: colour dot instead of a cover thumbnail ---- */
-table.books .dot { display: block; width: 16px; height: 16px; border-radius: 50%; background: radial-gradient(circle at 32% 28%, color-mix(in srgb, var(--c) 55%, #fff), var(--c) 62%); box-shadow: 0 0 0 1px color-mix(in srgb, var(--c) 60%, #000 25%), 0 2px 5px color-mix(in srgb, var(--c) 45%, transparent); transition: background .3s; }
-table.books td.c-cover, table.books th.c-cover { width: 14px; padding: 0 0 0 6px; }
+table.books .dot { display: block; width: 8px; height: 8px; border-radius: 50%; background: radial-gradient(circle at 32% 28%, color-mix(in srgb, var(--c) 55%, #fff), var(--c) 65%); box-shadow: 0 0 0 1px color-mix(in srgb, var(--c) 60%, #000 25%), 0 1px 3px color-mix(in srgb, var(--c) 45%, transparent); transition: background .3s; }
+table.books td.c-cover, table.books th.c-cover { width: 26px; padding: 0 9px 0 7px; overflow: visible; }   /* room for the dot and its ring: never clipped */
 
 /* ---- Category cards: a little shelf of book spines in the books' own colours ---- */
 .tile.cat { position: relative; overflow: hidden; --tint: transparent; }
