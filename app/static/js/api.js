@@ -83,6 +83,22 @@ export function coverHTML(b) {
   return `<mx-cover><div class="gen" style="--h:${h};--h2:${(h + 55) % 360}"><b>${esc(b.title)}</b><span>${esc(b.authors?.[0] || b.format)}</span></div></mx-cover>`;
 }
 
+const _colors = new Map();   // "id:updated_at" -> css colour
+export const fallbackColor = (b) => `hsl(${hue(b.title + b.author)} 62% 42%)`;   // same hue as the generated cover
+/** {id: css colour} for these books: the predominant colour of the cover, else the hue of their generated cover. */
+export async function coverColors(books) {
+  const key = (b) => `${b.id}:${b.updated_at}`;
+  const need = books.filter((b) => b.has_cover !== false && !_colors.has(key(b)));
+  for (let i = 0; i < need.length; i += 100) {
+    const chunk = need.slice(i, i + 100);
+    try {
+      const got = await api("/books/colors?ids=" + chunk.map((b) => b.id).join(","), { quiet: true });
+      for (const b of chunk) _colors.set(key(b), got[b.id] || fallbackColor(b));
+    } catch { for (const b of chunk) _colors.set(key(b), fallbackColor(b)); }
+  }
+  return Object.fromEntries(books.map((b) => [b.id, _colors.get(key(b)) || fallbackColor(b)]));
+}
+
 export const emit = (name, detail) => document.dispatchEvent(new CustomEvent(name, { detail }));
 
 // ---- user preferences (theme, cover borders), persisted per browser
@@ -121,7 +137,7 @@ export function applyPrefs() {
   document.documentElement.dataset.theme = THEMES[t] ? t : "vanilla";
   const root = document.documentElement;
   root.style.setProperty("--font", (FONTS[getPref("font", "inter")] || FONTS.inter)[1]);
-  root.style.fontSize = (16 * clampFs(getPref("fs", "100"))) / 100 + "px";
+  root.style.fontSize = (14.5 * clampFs(getPref("fs", "100"))) / 100 + "px";   // 100% = 14.5px (compact default)
   const bw = Math.max(0, Math.min(16, Number(getPref("border", "6")) || 0));
   document.documentElement.style.setProperty("--bw", bw + "px");
   document.documentElement.dataset.border = bw ? "on" : "off";

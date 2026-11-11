@@ -353,6 +353,8 @@ class MxBulkEdit extends HTMLElement {
           <div class="bk-in">${input(k)}${k === "tags" ? `<div class="bk-mode small"><label class="check"><input type="radio" name="tmode" value="add" checked><span>Add to each book's tags</span></label>
             <label class="check"><input type="radio" name="tmode" value="replace"><span>Replace all tags</span></label></div>` : ""}</div>`).join("")}</div>
         <datalist id="bk-cats">${cats.map((c) => `<option value="${esc(c.name)}">`).join("")}</datalist>
+        <div id="bk-prog" hidden><div class="progress" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><i></i></div>
+          <div class="small muted" id="bk-prog-t"></div></div>
         <div class="dialog-actions"><span class="muted small" id="bk-count" style="margin-right:auto"></span>
           <button class="btn" id="bk-cancel">Cancel</button><button class="btn primary" id="bk-apply">${icon("save")}Apply to ${n}</button></div>
       </div>`;
@@ -372,17 +374,41 @@ class MxBulkEdit extends HTMLElement {
     apply.onclick = async () => {
       const fields = {};
       for (const k of ticked()) { const v = $(`[data-in="${k}"]`).value; fields[k] = k === "rating" ? Number(v) : v.trim(); }
-      apply.disabled = true; apply.textContent = "Saving…";
+      const tags_mode = this.querySelector('[name="tmode"]:checked')?.value || "replace";
+      // Saved in batches so the bar reflects real progress (each book is written to its file or sidecar).
+      const BATCH = 10, done = { updated: 0, failed: [], books: [] }, total = ctx.ids.length;
+      const bar = $("#bk-prog .progress"), fill = bar.querySelector("i"), text = $("#bk-prog-t"), cancel = $("#bk-cancel");
+      const paint = (n) => {
+        const pct = Math.round((n / total) * 100);
+        fill.style.width = pct + "%"; bar.setAttribute("aria-valuenow", pct);
+        text.textContent = `${pct}% · ${n} of ${total} books`;
+        apply.textContent = `Saving… ${pct}%`;
+      };
+      this.running = true; this.stop = false;
+      $("#bk-prog").hidden = false; this.querySelector(".bk-grid").classList.add("busy");
+      apply.disabled = true; cancel.textContent = "Stop"; paint(0);
+      let error = null, i = 0;
       try {
-        const res = await api("/books/bulk-update", { json: { ids: ctx.ids, fields, tags_mode: this.querySelector('[name="tmode"]:checked')?.value || "replace" } });
-        ctx.applied(res);
-        this.close();
-        toast(`Updated ${res.updated} book${res.updated === 1 ? "" : "s"}${res.failed.length ? ` · ${res.failed.length} failed` : ""}`, res.failed.length ? "err" : undefined);
-      } catch (e) { toast(e.message || "Could not update", "err"); apply.disabled = false; apply.textContent = `Apply to ${n}`; }
+        for (; i < total && !this.stop; i += BATCH) {
+          const res = await api("/books/bulk-update", { json: { ids: ctx.ids.slice(i, i + BATCH), fields, tags_mode }, quiet: true });
+          done.updated += res.updated; done.failed.push(...res.failed); done.books.push(...res.books);
+          paint(Math.min(i + BATCH, total));
+        }
+      } catch (e) { error = e; }
+      const stopped = this.stop || error;
+      this.running = false;
+      if (done.updated) ctx.applied(done);            // rows for the books that did save
+      if (!stopped) { bar.classList.add("done"); text.textContent = `100% · ${total} of ${total} books`; await new Promise((r) => setTimeout(r, 450)); }
+      this.close();
+      const bad = done.failed.length;
+      const msg = `Updated ${done.updated} book${done.updated === 1 ? "" : "s"}${bad ? ` · ${bad} failed` : ""}`
+        + (error ? ` · stopped: ${error.message || "error"}` : this.stop ? ` · stopped, ${total - Math.min(i, total)} not changed` : "");
+      toast(msg, bad || stopped ? "err" : undefined);
     };
     $("[data-on]").focus();
   }
   close() {
+    if (this.running) { this.stop = true; return; }   // Esc / Cancel during a save = stop after the current batch
     this.classList.remove("open"); this.innerHTML = "";
     document.removeEventListener("keydown", this._esc, true);
   }

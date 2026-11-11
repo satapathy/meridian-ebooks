@@ -1,4 +1,4 @@
-import { api, esc, icon, toast, coverHTML, hue, fmtBytes, emit, applyPrefs, getPref, setPref } from "./api.js";
+import { api, esc, icon, toast, coverHTML, hue, fmtBytes, emit, applyPrefs, getPref, setPref, coverColors, fallbackColor } from "./api.js";
 import "./components.js";
 
 const view = document.getElementById("view");
@@ -111,11 +111,15 @@ const COLS = [
   ["description", "Description", "description", (b) => (b.description ? `<span class="c-desc" title="${esc(b.description)}">${esc(b.description)}</span>` : `<span class="muted">-</span>`), "c-desc-cell"],
 ];
 const SORT_OPTS = [["added", "Date added"], ...COLS.filter((c) => c[2] && c[2] !== "added").map((c) => [c[2], c[1] === "#" ? "Series #" : c[1]])];
+const paintDots = async (books, scope) => {
+  const colors = await coverColors(books);
+  for (const b of books) scope.querySelector(`tr[data-id="${b.id}"] .dot`)?.style.setProperty("--c", colors[b.id]);
+};
 const bookRow = (b, sel) => {
   const tr = document.createElement("tr");
   tr.tabIndex = 0; tr.dataset.id = b.id;
   tr.classList.toggle("sel", sel.has(b.id));
-  tr.innerHTML = `<td class="c-sel"><input type="checkbox" aria-label="Select ${esc(b.title)}"${sel.has(b.id) ? " checked" : ""}></td><td class="c-cover"><div class="thumb">${coverHTML(b)}</div></td>`
+  tr.innerHTML = `<td class="c-sel"><input type="checkbox" aria-label="Select ${esc(b.title)}"${sel.has(b.id) ? " checked" : ""}></td><td class="c-cover"><span class="dot" style="--c:${fallbackColor(b)}" title="Predominant cover colour"></span></td>`
     + COLS.map(([, , , cell, cls]) => `<td class="${cls}">${cell(b)}</td>`).join("");
   const box = tr.querySelector(".c-sel input");
   tr.querySelector(".c-sel").onclick = (e) => { e.stopPropagation(); if (e.target !== box) box.click(); };   // the whole cell is the click target
@@ -154,7 +158,6 @@ const VIEWS = {
         <select class="in" id="cat" aria-label="Category"><option value="">All categories</option>${facets.categories.map((c) => `<option ${state.category === c.name ? "selected" : ""} value="${esc(c.name)}">${esc(c.name)} (${c.count})</option>`).join("")}</select>
         <select class="in" id="sort" aria-label="Sort">${SORT_OPTS.map(([v, l]) => `<option value="${v}" ${state.sort === v ? "selected" : ""}>${l}</option>`).join("")}</select>
         <button class="btn sm" id="order" title="Toggle sort order">${state.order === "asc" ? "↑ Asc" : "↓ Desc"}</button>
-        ${list ? `<button class="btn sm primary" id="bulk-btn" hidden>${icon("settings")}<span>Bulk edit</span></button>` : ""}
         <div class="seg" role="group" aria-label="View">
           <button class="btn sm ${list ? "" : "on"}" data-view="grid" aria-pressed="${!list}" title="Card view">${icon("grid")}</button>
           <button class="btn sm ${list ? "on" : ""}" data-view="list" aria-pressed="${list}" title="List view (table with all metadata)">${icon("list")}</button>
@@ -193,6 +196,7 @@ const VIEWS = {
       total = page.total; offset += page.items.length;
       (list ? grid.querySelector("tbody") : grid).append(...page.items.map(list ? (b) => bookRow(b, selApi) : card));
       selApi?.paint();
+      if (list) paintDots(page.items, grid);
       count.textContent = group ? `${total} item${total === 1 ? "" : "s"} · series grouped` : `${total} book${total === 1 ? "" : "s"}`;
       if (!total) {
         const filtered = state.q || state.author || state.category || state.format || state.tag || state.series;
@@ -211,8 +215,6 @@ const VIEWS = {
         ids: [...sel],
         applied: (res) => { res.books.forEach((b) => emit("book-updated", b)); sel.clear(); paint(); },
       });
-      const topBtn = root.querySelector("#bulk-btn");   // grab it now: `root` is emptied once the view is on the page
-      topBtn.onclick = openBulk;
       const paint = () => {
         const loaded = rows(), n = sel.size, all = grid.querySelector("#sel-all");
         for (const tr of loaded) { const on = sel.has(tr.dataset.id); tr.classList.toggle("sel", on); tr.querySelector(".c-sel input").checked = on; }
@@ -224,8 +226,6 @@ const VIEWS = {
           ${many ? `<button class="btn sm primary" id="bb-edit">${icon("settings")}Bulk edit</button>` : ""}<button class="btn sm" id="bb-clear">Clear</button>`;
         bar.querySelector("#bb-clear").onclick = () => { sel.clear(); paint(); };
         if (many) bar.querySelector("#bb-edit").onclick = openBulk;
-        topBtn.hidden = !many;
-        topBtn.querySelector("span").textContent = `Bulk edit (${n})`;
         const allBtn = bar.querySelector("#bb-all");
         if (allBtn) allBtn.onclick = async () => {   // every book matching the current filters, not just the loaded rows
           allBtn.disabled = true; allBtn.textContent = "Selecting…";
@@ -256,7 +256,7 @@ const VIEWS = {
       const onUpdate = (e) => {
         if (!alive()) return document.removeEventListener("book-updated", onUpdate);
         const old = grid.querySelector(`tr[data-id="${e.detail.id}"]`);
-        if (old) old.replaceWith(bookRow(e.detail, selApi));
+        if (old) { old.replaceWith(bookRow(e.detail, selApi)); paintDots([e.detail], grid); }
       };
       document.addEventListener("book-updated", onUpdate);
     }
@@ -279,11 +279,22 @@ const VIEWS = {
 
   async categories(root) {
     const f = await api("/facets");
-    const covers = await Promise.all(f.categories.slice(0, 60).map((c) => api(`/books?category=${enc(c.name)}&limit=3&sort=added`, { quiet: true }).catch(() => ({ items: [] }))));
+    const shelves = await Promise.all(f.categories.slice(0, 60).map((c) => api(`/books?category=${enc(c.name)}&limit=5&sort=added`, { quiet: true }).catch(() => ({ items: [] }))));
+    const HEIGHTS = [100, 76, 92, 66, 84];   // fixed, so every shelf looks alike from visit to visit
+    const spine = (b, i) => `<i style="--c:${fallbackColor(b)};--h:${HEIGHTS[i % 5]}%" data-id="${b.id}"></i>`;
     root.innerHTML = `<div class="page-head"><div><div class="eyebrow">Browse</div><h1 class="grad-text">Categories</h1><div class="muted small">${f.categories.length} collections</div></div></div><div class="tiles"></div>`;
-    root.querySelector(".tiles").innerHTML = f.categories.map((c, i) => `<a class="tile glass" href="#/library?category=${enc(c.name)}&sort=title&order=asc">
-      <div class="collage">${(covers[i]?.items || []).map((b) => `<div>${coverHTML(b)}</div>`).join("")}</div>
+    root.querySelector(".tiles").innerHTML = f.categories.map((c, i) => `<a class="tile cat glass" data-cat="${i}" href="#/library?category=${enc(c.name)}&sort=title&order=asc">
+      <div class="spines" aria-hidden="true">${(shelves[i]?.items || []).map(spine).join("")}</div>
       <div style="min-width:0"><b>${esc(c.name)}</b><span class="muted small">${c.count} book${c.count > 1 ? "s" : ""}</span></div></a>`).join("");
+    // swap in each book's real cover colour, and tint the card with the first one
+    const all = shelves.flatMap((s) => s.items || []);
+    coverColors(all).then((colors) => {
+      root.querySelectorAll(".tile.cat").forEach((tile) => {
+        const items = shelves[Number(tile.dataset.cat)]?.items || [];
+        tile.querySelectorAll(".spines i").forEach((el) => el.style.setProperty("--c", colors[el.dataset.id]));
+        if (items[0]) tile.style.setProperty("--tint", colors[items[0].id]);
+      });
+    });
     if (f.tags.length) {
       root.insertAdjacentHTML("beforeend", `<div class="page-head" style="margin-top:34px"><h1 style="font-size:22px">Popular tags</h1></div><div class="toolbar">${f.tags.slice(0, 40).map((t) => `<a class="chip" href="#/library?tag=${enc(t.name)}">${esc(t.name)} <small>${t.count}</small></a>`).join("")}</div>`);
     }

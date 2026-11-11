@@ -42,6 +42,16 @@ def list_books(
                               group_series=group_series)
 
 
+@router.get(
+    "/colors", summary="Predominant cover colour of several books",
+    description="`ids` is comma separated (max 200). Returns `{id: '#rrggbb' | null}`; null means the book has no cover. "
+                "Used by the list view and the category cards.",
+)
+def cover_colors(ids: str = Query(..., description="Comma separated book ids")):
+    wanted = [i for i in (x.strip() for x in ids.split(",")) if i][:200]
+    return service.cover_colors(wanted)
+
+
 @router.get("/{book_id}", response_model=Book, summary="Get one book")
 def get_book(book_id: str):
     try:

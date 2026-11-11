@@ -116,6 +116,58 @@ def cover_file(book_id: str) -> Path | None:
     return None
 
 
+_color_cache: "dict[tuple, str | None]" = {}
+
+
+def dominant_color(image_path: Path) -> str | None:
+    """The cover's predominant colour as '#rrggbb'. Pixels are bucketed (4 bits per channel) and weighted towards
+    saturated ones, so a white page or a black border around a cover does not win over the artwork."""
+    try:
+        from PIL import Image
+
+        with Image.open(image_path) as im:
+            im.draft("RGB", (96, 96))
+            data = im.convert("RGB").resize((40, 40)).tobytes()
+    except Exception:
+        return None
+    buckets: dict[tuple, list] = {}          # key -> [weight, pixels, r sum, g sum, b sum]
+    for r, g, b in zip(data[0::3], data[1::3], data[2::3]):
+        hi, lo = max(r, g, b), min(r, g, b)
+        if (hi > 238 and lo > 225) or hi < 18:       # paper white / pure black
+            continue
+        e = buckets.setdefault((r >> 4, g >> 4, b >> 4), [0.0, 0, 0, 0, 0])
+        e[0] += 1 + 3 * (hi - lo) / hi
+        e[1] += 1; e[2] += r; e[3] += g; e[4] += b
+    if not buckets:
+        return None
+
+    def near(a, b):      # neighbouring buckets count as one colour, so a smooth gradient is not split into many
+        return all(abs(a[i] - b[i]) <= 1 for i in range(3))
+
+    best = max(buckets, key=lambda k: sum(buckets[n][0] for n in buckets if near(k, n)))
+    grp = [buckets[n] for n in buckets if near(best, n)]
+    count = sum(e[1] for e in grp)
+    r, g, b = (round(sum(e[i] for e in grp) / count) for i in (2, 3, 4))
+    return f"#{r:02x}{g:02x}{b:02x}"
+
+
+def cover_colors(ids: list[str]) -> dict[str, str | None]:
+    """Predominant cover colour per book id (None when the book has no cover). Cached until the cover file changes."""
+    out: dict[str, str | None] = {}
+    for bid in dict.fromkeys(ids):
+        p = cover_file(bid)
+        if not p:
+            out[bid] = None
+            continue
+        key = (str(p), p.stat().st_mtime_ns)
+        if key not in _color_cache:
+            if len(_color_cache) > 5000:
+                _color_cache.clear()
+            _color_cache[key] = dominant_color(p)
+        out[bid] = _color_cache[key]
+    return out
+
+
 # --------------------------------------------------------------------------- sidecar + persistence
 def _write_sidecar(book: dict, embedded: set[str]) -> None:
     d = book_dir(book["id"])

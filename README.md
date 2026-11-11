@@ -11,7 +11,8 @@ Runs in one container, including on a Raspberry Pi.
 * Upload files, whole folders (recursive) or `.zip` archives; EPUB, PDF, DOCX, MOBI, AZW3, FB2, TXT, CBZ and more
 * Plex-style cover wall with infinite scroll, series grouping, Authors, Categories and Recently added views
 * Switch between the cover wall and a **list view**: a table with every metadata column (title, subtitle, author, series, category, tags, publisher, ISBN, rating, size, description...), sortable by clicking any heading; your choice is remembered in the browser
-* **Bulk edit** in list view: tick rows (shift-click for a range, or select all matching the current filter), then change one or more fields - category, sub-category, tags (add or replace), author, series, publisher, published, language, rating - on all of them at once
+* List rows carry a round dot in each cover's predominant colour, and Categories shows each collection as a little shelf of spines in its books' own colours (`GET /api/books/colors`)
+* **Bulk edit** in list view: tick rows (shift-click for a range, or select all matching the current filter), then change one or more fields - category, sub-category, tags (add or replace), author, series, publisher, published, language, rating - on all of them at once, with a live percent-complete progress bar (Stop cancels after the current batch)
 * Generated covers for books without one; replace any cover with your own image
 * Server-side UUID per book, MD5 duplicate detection and one-call cleanup
 * Sharded folder storage derived from the UUID (`1234/5678/abcd/…`)

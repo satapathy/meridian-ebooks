@@ -115,3 +115,22 @@ def test_every_list_column_is_sortable(client):
         for group in ("false", "true"):
             r = client.get("/api/books", params={"sort": key, "order": "asc", "group_series": group})
             assert r.status_code == 200 and r.json()["total"] == 1, (key, group, r.text)
+
+
+def test_cover_colors_pick_the_artwork_not_the_border(client):
+    import io
+
+    from PIL import Image, ImageDraw
+
+    img = Image.new("RGB", (200, 300), (255, 255, 255))                      # white page border ...
+    ImageDraw.Draw(img).rectangle([20, 20, 180, 280], fill=(200, 30, 30))    # ... around red artwork
+    buf = io.BytesIO(); img.save(buf, "PNG")
+    a = client.post("/api/books/upload", files=[("files", ("a.epub", make_epub(title="Red", marker="cc1")))]).json()["results"][0]["book_id"]
+    b = client.post("/api/books/upload", files=[("files", ("b.epub", make_epub(title="Plain", marker="cc2")))]).json()["results"][0]["book_id"]
+    client.put(f"/api/books/{a}/cover", files={"file": ("c.png", buf.getvalue(), "image/png")})
+    r = client.get("/api/books/colors", params={"ids": f"{a},{b},nope"})
+    assert r.status_code == 200, r.text
+    d = r.json()
+    red, green, blue = (int(d[a][i:i + 2], 16) for i in (1, 3, 5))
+    assert red > 180 and green < 60 and blue < 60
+    assert d[b] is None and d["nope"] is None                                 # no cover / unknown id -> null
