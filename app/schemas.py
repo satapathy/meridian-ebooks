@@ -93,6 +93,18 @@ class BulkResult(BaseModel):
     books: list[Book] = Field(description="The updated books")
 
 
+class BulkDelete(BaseModel):
+    ids: list[str] = Field(..., min_length=1, max_length=2000, description="Books to delete permanently")
+
+
+class BulkDeleteResult(BaseModel):
+    deleted: int
+    deleted_ids: list[str]
+    failed: list[BulkFailure]
+    bytes_freed: int = Field(description="Size of the files removed from disk")
+    leftover: int = Field(0, description="Books whose folder could not be fully removed from disk (run cleanup)")
+
+
 class RenameFile(BaseModel):
     filename: str = Field(description="New file name; the extension is kept automatically", examples=["dune-first-edition"])
 

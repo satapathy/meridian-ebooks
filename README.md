@@ -12,6 +12,7 @@ Runs in one container, including on a Raspberry Pi.
 * Plex-style cover wall with infinite scroll and series grouping, plus Authors, Categories and Recently added views
 * **List view**: a sortable table with every metadata column (choice remembered per browser)
 * **Bulk edit**: select many rows and change category, tags, author and more in one go, or run a clean-up (Title Case, find/replace, trim...) on a field, with a progress bar
+* **Delete** one book or many (with a clear warning first); the files and any emptied folders are removed from disk too
 * Generated covers for books without one; replace any cover with your own image
 * Server-side UUID per book, MD5 duplicate detection and one-call cleanup
 * Sharded folder storage derived from the UUID (`1234/5678/abcd/…`)
@@ -167,6 +168,7 @@ mkdir -p data
 | Flat sharded storage | UUID hex split 4 chars at a time: `1234/5678/abcd/ef01/…/book-name.ext` (32 hex chars → 8 levels) |
 | Library export as ZIP | `GET /api/export?group_by=category` or `author` (optionally `format=`, `ids=`, `include_metadata=`) |
 | Metadata editing | `PATCH /api/books/{id}` (many books at once: `POST /api/books/bulk-update`, `POST /api/books/bulk-transform`). EPUB, PDF and DOCX get what they can hold **inside the file**; everything else goes into `book-name-info.json` next to the book. The response's `storage` field shows what went where. |
+| Delete books | **Book panel > Delete book**, or tick rows in list view and press **Delete** in the bar above the table. A warning dialog explains that it is permanent and lists what will go (for 10 or more books you must also type `delete`); Cancel has the focus, so Enter does not delete. Deleting removes the record **and** the book's folder on disk - the book file, cover and `-info.json` sidecar - then any parent folders left empty. Bulk deletes run in batches with a progress bar and Stop button, and report the space freed. A folder that cannot be removed (for example a file locked by another program) is reported, and **Tools > Duplicates & cleanup** sweeps up such leftovers. API: `DELETE /api/books/{id}`, `POST /api/books/bulk-delete`. |
 | Title ≠ filename | Editing the title never touches the file name. `POST /api/books/{id}/rename` renames the file (and its sidecar) separately. |
 | Themes and fonts | Ten themes (Vanilla, the default, plus Aurora, Neon, Sunset, Ocean, Emerald, Cyber, Paper, Blossom, Lavender), eleven open-source fonts and the system font, text size 80-130% (100% = 14.5px), cover border thickness and series grouping, all in Settings (sliders icon, top right) and saved per browser. The fonts are bundled with the app (Latin subset), so nothing is downloaded when you switch. `GET /api/books?group_series=true` returns the grouped view (`series_count` on each entry; filter with `series=` to list one series). |
 

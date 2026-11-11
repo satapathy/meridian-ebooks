@@ -16,7 +16,7 @@ from .config import SUPPORTED_EXTENSIONS, settings
 from .db import db
 from .search import parse_query
 from .storage import (
-    book_dir, prune_empty_parents, remove_book_dir, safe_filename, sanitize_component,
+    book_dir, folder_size, prune_empty_parents, remove_book_dir, safe_filename, sanitize_component,
     sidecar_name, user_cover_name, uuid_to_rel_dir,
 )
 
@@ -419,11 +419,28 @@ def remove_user_cover(book_id: str) -> dict:
         return to_book(_get_row(conn, book_id))
 
 
-def delete_book(book_id: str) -> None:
+def delete_book(book_id: str) -> bool:
+    """Remove the record, then its folder on disk (book file, cover, sidecar) and any folders left empty.
+    Returns False if the files could not all be removed; `cleanup` (Tools) sweeps up such leftovers later."""
     with _write_lock, db() as conn:
         _get_row(conn, book_id)
         conn.execute("DELETE FROM books WHERE id=?", (book_id,))
-    remove_book_dir(book_id)
+    return remove_book_dir(book_id)
+
+
+def bulk_delete(ids: list[str]) -> dict:
+    """Delete many books. A missing id is reported and never stops the others."""
+    deleted, failed, freed, leftover = [], [], 0, 0
+    for bid in dict.fromkeys(ids):
+        try:
+            size = folder_size(book_dir(bid))
+            if not delete_book(bid):
+                leftover += 1
+            deleted.append(bid)
+            freed += size
+        except BookNotFound:
+            failed.append({"id": bid, "error": "Book not found"})
+    return {"deleted": len(deleted), "deleted_ids": deleted, "failed": failed, "bytes_freed": freed, "leftover": leftover}
 
 
 # --------------------------------------------------------------------------- query

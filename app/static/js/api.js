@@ -110,19 +110,20 @@ export function setProgress(bar, done, total) {
 }
 /** Send `ids` to `call(chunk)` a few at a time. Merges the {updated, unchanged, failed, books} answers and reports progress;
  *  an error or `shouldStop()` ends the run early, keeping what was saved so far. */
-export async function runBatches(ids, size, call, { onProgress, shouldStop }) {
+export async function runBatches(ids, size, call, { onProgress, shouldStop, onBatch = () => {} }) {
   const out = { updated: 0, unchanged: 0, failed: [], books: [], error: null };
   let i = 0;
   try {
     for (; i < ids.length && !shouldStop(); i += size) {
       const r = await call(ids.slice(i, i + size));
       out.updated += r.updated; out.unchanged += r.unchanged || 0; out.failed.push(...r.failed); out.books.push(...r.books);
+      onBatch(r);
       onProgress(Math.min(i + size, ids.length));
     }
   } catch (e) { out.error = e; }
   return { ...out, stopped: shouldStop() || !!out.error, remaining: Math.max(0, ids.length - i) };
 }
-export const batchMessage = (r, total) => `Updated ${r.updated} book${r.updated === 1 ? "" : "s"}`
+export const batchMessage = (r, total, verb = "Updated") => `${verb} ${r.updated} book${r.updated === 1 ? "" : "s"}`
   + (r.unchanged ? ` · ${r.unchanged} already fine` : "") + (r.failed.length ? ` · ${r.failed.length} failed` : "")
   + (r.error ? ` · stopped: ${r.error.message || "error"}` : r.stopped ? ` · stopped, ${r.remaining} not processed` : "");
 

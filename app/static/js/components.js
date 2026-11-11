@@ -188,7 +188,12 @@ class MxDrawer extends HTMLElement {
       try { this.book = await api(`/books/${b.id}/cover`, { method: "DELETE" }); emit("book-updated", this.book); this.renderKeepingEdits(); toast("Custom cover removed"); } catch {}
     };
     this.querySelector('[data-act="delete"]').onclick = async () => {
-      if (!confirm(`Delete “${b.title}” and its files permanently?`)) return;
+      const ok = await document.getElementById("confirm").ask({
+        title: "Delete this book?", confirm: "Delete book",
+        body: `<p><b>${esc(b.title)}</b>${b.author ? ` <span class="muted">by ${esc(b.author)}</span>` : ""}<br><span class="muted small">${esc(b.filename)} · ${fmtBytes(b.size)}</span></p>
+          <p>This <b>permanently</b> removes the book from the library <b>and deletes its files from disk</b>: the book itself, its cover and its metadata file. Folders left empty are removed too.</p>
+          <p><b>This cannot be undone.</b> Export or download the book first if you may want it back.</p>` });
+      if (!ok) return;
       try {
         await api("/books/" + b.id, { method: "DELETE" });
         this.close(); toast("Book deleted"); emit("library-changed");
@@ -208,6 +213,37 @@ class MxDrawer extends HTMLElement {
 
 }
 customElements.define("mx-drawer", MxDrawer);
+
+// ------------------------------------------------------------------ <mx-confirm>
+/** A themed "are you sure" dialog: `await $("confirm").ask({ title, body, confirm, requireText })` -> true / false.
+ *  Cancel has the focus (Enter does not delete by accident); `requireText` makes the user type a word first. */
+class MxConfirm extends HTMLElement {
+  ask({ title, body, confirm = "Delete", requireText = "" }) {
+    this.classList.add("open");
+    this.innerHTML = `<div class="scrim" style="position:absolute;inset:0;background:rgba(2,2,10,.6);backdrop-filter:blur(4px)"></div>
+      <div class="dialog glass cf" role="alertdialog" aria-labelledby="cf-title" aria-describedby="cf-body">
+        <h2 id="cf-title">${esc(title)}</h2>
+        <div class="cf-warn" id="cf-body">${body}</div>
+        ${requireText ? `<label class="field" style="margin-top:12px"><span>Type <b>${esc(requireText)}</b> to confirm</span><input class="in" id="cf-type" autocomplete="off"></label>` : ""}
+        <div class="dialog-actions"><button class="btn" id="cf-no">Cancel</button><button class="btn danger solid" id="cf-yes"${requireText ? " disabled" : ""}>${icon("trash")}${esc(confirm)}</button></div>
+      </div>`;
+    const $ = (s) => this.querySelector(s), yes = $("#cf-yes");
+    return new Promise((resolve) => {
+      const done = (answer) => {
+        document.removeEventListener("keydown", onKey, true);
+        this.classList.remove("open"); this.innerHTML = "";
+        resolve(answer);
+      };
+      const onKey = (e) => { if (e.key === "Escape") { e.stopImmediatePropagation(); done(false); } };
+      document.addEventListener("keydown", onKey, true);
+      $(".scrim").onclick = $("#cf-no").onclick = () => done(false);
+      yes.onclick = () => done(true);
+      if (requireText) $("#cf-type").oninput = (e) => { yes.disabled = e.target.value.trim().toLowerCase() !== requireText.toLowerCase(); };
+      $("#cf-no").focus();
+    });
+  }
+}
+customElements.define("mx-confirm", MxConfirm);
 
 // ------------------------------------------------------------------ <mx-bulkedit>
 const BULK_FIELDS = [["category", "Category"], ["subcategory", "Sub-category"], ["tags", "Tags"], ["author", "Author(s)"],

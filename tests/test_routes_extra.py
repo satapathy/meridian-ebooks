@@ -328,3 +328,42 @@ def test_server_side_import_rejects_bad_paths(client):
     assert client.post("/api/import", json={"path": "../../etc"}).status_code == 400
     assert client.post("/api/import", json={"path": "does-not-exist"}).status_code == 404
     assert client.get("/api/import/unknown").status_code == 404
+
+
+# ----------------------------------------------------------------------------- delete: files and folders are cleaned up
+def tree(root):
+    return sorted(str(p.relative_to(root)) for p in root.rglob("*"))
+
+
+def test_delete_removes_every_file_of_the_book_and_empty_folders(client):
+    bid = upload(client, marker="del1")
+    client.patch(f"/api/books/{bid}", json={"rating": 4})                                      # creates a sidecar
+    client.put(f"/api/books/{bid}/cover", files={"file": ("c.png", png_bytes(), "image/png")})  # and a cover next to the book
+    folder = book_dir(bid)
+    assert len(list(folder.iterdir())) >= 3 and folder.exists()
+    assert client.delete(f"/api/books/{bid}").status_code == 204
+    assert not folder.exists() and tree(settings.library_dir) == []                              # nothing left, not even empty folders
+    assert client.get("/api/stats").json()["books"] == 0
+
+
+def test_bulk_delete_removes_files_keeps_other_books_and_reports(client):
+    a, b, c = (upload(client, title=f"Del {i}", marker=f"bd{i}") for i in range(3))
+    folder_c = book_dir(c)
+    r = client.post("/api/books/bulk-delete", json={"ids": [a, b, "missing", a]})
+    assert r.status_code == 200, r.text
+    d = r.json()
+    assert d["deleted"] == 2 and sorted(d["deleted_ids"]) == sorted([a, b]) and d["leftover"] == 0
+    assert d["failed"] == [{"id": "missing", "error": "Book not found"}] and d["bytes_freed"] > 0     # duplicates in the request counted once
+    assert not book_dir(a).exists() and not book_dir(b).exists() and folder_c.exists()
+    assert client.get(f"/api/books/{a}").status_code == 404 and client.get(f"/api/books/{c}").status_code == 200
+    assert client.post("/api/books/bulk-delete", json={"ids": [c]}).json()["deleted"] == 1
+    assert tree(settings.library_dir) == []                                                       # every empty parent folder removed
+    assert client.post("/api/books/bulk-delete", json={"ids": []}).status_code == 422
+
+
+def test_delete_reports_files_that_could_not_be_removed(client, monkeypatch):
+    bid = upload(client, marker="del9")
+    monkeypatch.setattr(service, "remove_book_dir", lambda _id: False)                           # e.g. a file locked by another program
+    d = client.post("/api/books/bulk-delete", json={"ids": [bid]}).json()
+    assert d["deleted"] == 1 and d["leftover"] == 1
+    assert client.get(f"/api/books/{bid}").status_code == 404                                    # the record is gone either way

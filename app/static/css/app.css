@@ -248,8 +248,8 @@ mx-drawer.open { display: block; }
 .inline { display: flex; gap: 8px; align-items: center; } .inline .in { flex: 1; } .inline .ext { color: var(--muted); }
 
 /* ============ Dialogs ============ */
-mx-upload, mx-export, mx-settings, mx-bulkedit { position: fixed; inset: 0; z-index: 70; display: none; place-items: center; padding: 20px; }
-mx-upload.open, mx-export.open, mx-settings.open, mx-bulkedit.open { display: grid; }
+mx-upload, mx-export, mx-settings, mx-bulkedit, mx-confirm { position: fixed; inset: 0; z-index: 70; display: none; place-items: center; padding: 20px; }
+mx-upload.open, mx-export.open, mx-settings.open, mx-bulkedit.open, mx-confirm.open { display: grid; }
 
 /* Cover frame: --bw is the border thickness (Settings). 0 = bare cover stretched to fill (FitXY). */
 :root { --bw: 6px; }
@@ -400,3 +400,12 @@ table.books td.c-cover, table.books th.c-cover { width: 14px; padding: 0 0 0 6px
 .bk-tabs { margin: 10px 0 12px; }
 .bk-params { grid-column: 1 / -1; display: flex; flex-direction: column; gap: 8px; }
 .bulkbar .progress { flex: 1; min-width: 140px; margin: 0; }
+
+/* ---- Confirmation dialog (delete) ---- */
+.dialog.cf { width: min(480px, 100%); }
+.cf-warn { margin-top: 10px; padding: 10px 12px; border-radius: 10px; border: 1px solid color-mix(in srgb, #e5484d 45%, var(--line)); background: color-mix(in srgb, #e5484d 8%, transparent); font-size: .875rem; }
+.cf-warn p { margin: 0 0 8px; } .cf-warn p:last-child { margin-bottom: 0; }
+.cf-list { margin: 0 0 8px; padding-left: 18px; max-height: 9.5em; overflow: auto; font-size: .8125rem; }
+.btn.danger.solid { background: #e5484d; color: #fff; border-color: transparent; }
+.btn.danger.solid:hover { background: #d93a3f; border-color: transparent; }
+.btn.danger.solid:disabled { opacity: .4; }

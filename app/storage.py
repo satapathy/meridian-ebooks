@@ -56,7 +56,14 @@ def prune_empty_parents(path: Path) -> None:
         cur = cur.parent
 
 
-def remove_book_dir(book_id: str) -> None:
+def folder_size(path: Path) -> int:
+    return sum(f.stat().st_size for f in path.rglob("*") if f.is_file()) if path.exists() else 0
+
+
+def remove_book_dir(book_id: str) -> bool:
+    """Delete the book's folder (book file, cover, sidecar...) and any parent folders that are now empty.
+    Returns False if something could not be removed (e.g. a file locked by another program)."""
     d = book_dir(book_id)
     shutil.rmtree(d, ignore_errors=True)
     prune_empty_parents(d.parent)
+    return not d.exists()

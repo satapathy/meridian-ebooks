@@ -221,22 +221,45 @@ const VIEWS = {
         applied: (res) => { res.books.forEach((b) => emit("book-updated", b)); sel.clear(); paint(); },
         advanced: (spec) => runAdvanced(spec, [...sel]),
       });
-      const runAdvanced = async (spec, ids) => {   // the dialog has closed: show the progress where the buttons were
+      /** Run `call(chunk)` over `ids` in batches, with the progress bar and a Stop button in the bar above the table. */
+      const runInBar = async (label, ids, call, extra = {}) => {
         let stop = false;
         running = true;
         bar.classList.add("on");
-        bar.innerHTML = `<b>${esc(spec.label)}</b>${progressHTML()}<span class="small muted" id="bp-t"></span><button class="btn sm" id="bp-stop">Stop</button>`;
+        bar.innerHTML = `<b>${esc(label)}</b>${progressHTML()}<span class="small muted" id="bp-t"></span><button class="btn sm" id="bp-stop">Stop</button>`;
         const meter = bar.querySelector(".progress"), text = bar.querySelector("#bp-t"), stopBtn = bar.querySelector("#bp-stop");
         stopBtn.onclick = () => { stop = true; stopBtn.disabled = true; stopBtn.textContent = "Stopping…"; };
         const show = (done) => { text.textContent = `${setProgress(meter, done, ids.length)}% · ${done} of ${ids.length}`; };
         show(0);
-        const r = await runBatches(ids, 10, (chunk) => api("/books/bulk-transform", { json: { ...spec.body, ids: chunk }, quiet: true }),
-          { onProgress: show, shouldStop: () => stop });
+        const r = await runBatches(ids, 10, call, { onProgress: show, shouldStop: () => stop, ...extra });
         if (!r.stopped) { meter.classList.add("done"); text.textContent = `100% · ${ids.length} of ${ids.length}`; await new Promise((res) => setTimeout(res, 450)); }
         running = false;
-        r.books.forEach((b) => emit("book-updated", b));
         sel.clear(); paint();
+        return r;
+      };
+      const runAdvanced = async (spec, ids) => {   // the dialog has closed: show the progress where the buttons were
+        const r = await runInBar(spec.label, ids, (chunk) => api("/books/bulk-transform", { json: { ...spec.body, ids: chunk }, quiet: true }));
+        r.books.forEach((b) => emit("book-updated", b));
         toast(batchMessage(r, ids.length), r.failed.length || r.stopped ? "err" : undefined);
+      };
+      const deleteSelected = async () => {
+        const ids = [...sel], n = ids.length;
+        const titles = rows().filter((tr) => sel.has(tr.dataset.id)).map((tr) => tr.querySelector(".c-title").textContent.trim());
+        const shown = titles.slice(0, 6);
+        const ok = await document.getElementById("confirm").ask({
+          title: `Delete ${n} book${n === 1 ? "" : "s"}?`, confirm: `Delete ${n}`, requireText: n >= 10 ? "delete" : "",
+          body: `<p>This <b>permanently</b> removes ${n === 1 ? "this book" : `these ${n} books`} from the library <b>and deletes the files from disk</b>: the books, their covers and metadata files. Folders left empty are removed too.</p>
+            <ul class="cf-list">${shown.map((t) => `<li>${esc(t)}</li>`).join("")}${n > shown.length ? `<li class="muted">…and ${n - shown.length} more</li>` : ""}</ul>
+            <p><b>This cannot be undone.</b> Want a backup first? Use <b>Export</b> (top right) before deleting.</p>` });
+        if (!ok) return;
+        const freed = { bytes: 0, leftover: 0 };
+        const r = await runInBar(`Deleting ${n} book${n === 1 ? "" : "s"}`, ids,
+          (chunk) => api("/books/bulk-delete", { json: { ids: chunk }, quiet: true }).then((x) => ({ ...x, updated: x.deleted, books: [] })),
+          { onBatch: (x) => { freed.bytes += x.bytes_freed; freed.leftover += x.leftover; } });
+        toast(batchMessage(r, n, "Deleted") + (freed.bytes ? ` · freed ${fmtBytes(freed.bytes)}` : "")
+          + (freed.leftover ? ` · ${freed.leftover} folder(s) could not be fully removed - run Tools > Duplicates & cleanup` : ""),
+          r.failed.length || r.stopped || freed.leftover ? "err" : undefined);
+        emit("library-changed");                    // reload the list and the totals
       };
       const paint = () => {
         const loaded = rows(), n = sel.size, all = grid.querySelector("#sel-all");
@@ -248,10 +271,11 @@ const VIEWS = {
         bar.classList.toggle("on", n > 0);
         bar.innerHTML = !n ? `<span class="muted small">Tick rows to select them; two or more can be edited together.</span>`
           : `<b>${n} selected</b>${n < total ? `<button class="btn sm" id="bb-all">Select all ${total}</button>` : ""}
-          ${many ? `<button class="btn sm primary" id="bb-edit">${icon("settings")}Bulk edit</button>` : ""}<button class="btn sm" id="bb-clear">Clear</button>`;
+          ${many ? `<button class="btn sm primary" id="bb-edit">${icon("settings")}Bulk edit</button>` : ""}<button class="btn sm danger" id="bb-del">${icon("trash")}Delete</button><button class="btn sm" id="bb-clear">Clear</button>`;
         if (!n) return;
         bar.querySelector("#bb-clear").onclick = () => { sel.clear(); paint(); };
         if (many) bar.querySelector("#bb-edit").onclick = openBulk;
+        bar.querySelector("#bb-del").onclick = deleteSelected;
         const allBtn = bar.querySelector("#bb-all");
         if (allBtn) allBtn.onclick = async () => {   // every book matching the current filters, not just the loaded rows
           allBtn.disabled = true; allBtn.textContent = "Selecting…";

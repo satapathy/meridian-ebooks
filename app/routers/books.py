@@ -5,7 +5,7 @@ from fastapi import APIRouter, File, HTTPException, Query, Response, UploadFile
 from fastapi.responses import FileResponse
 
 from .. import service
-from ..schemas import Book, BookPage, BookUpdate, BulkResult, BulkTransform, BulkUpdate, RenameFile
+from ..schemas import Book, BookPage, BookUpdate, BulkDelete, BulkDeleteResult, BulkResult, BulkTransform, BulkUpdate, RenameFile
 
 router = APIRouter(prefix="/books", tags=["Books"])
 
@@ -149,6 +149,15 @@ def bulk_transform(body: BulkTransform):
         raise HTTPException(400, str(e))
 
 
+@router.post(
+    "/bulk-delete", response_model=BulkDeleteResult, summary="Delete many books and their files",
+    description=("**Permanent.** Removes every book in `ids` from the library and deletes its folder on disk (the book file, its cover "
+                 "and metadata sidecar), then removes any folders left empty. A missing id is listed in `failed` and does not stop the others."),
+)
+def bulk_delete(body: BulkDelete):
+    return service.bulk_delete(body.ids)
+
+
 @router.post("/{book_id}/rename", response_model=Book, summary="Rename the file on disk (not the title)")
 def rename(book_id: str, body: RenameFile):
     try:
@@ -161,7 +170,8 @@ def rename(book_id: str, body: RenameFile):
         raise HTTPException(409, str(e))
 
 
-@router.delete("/{book_id}", status_code=204, summary="Delete a book and its files")
+@router.delete("/{book_id}", status_code=204, summary="Delete a book and its files",
+               description="**Permanent.** Removes the record and deletes the book file, cover and sidecar from disk, plus any folders left empty.")
 def delete(book_id: str):
     try:
         service.delete_book(book_id)
