@@ -436,3 +436,5 @@ table.books tbody tr.sel { background: color-mix(in srgb, var(--a1) 16%, transpa
 .bk-in { display: flex; flex-direction: column; gap: 8px; }
 .bk-in .in:disabled { opacity: .45; }
 .bk-mode { display: flex; gap: 16px; flex-wrap: wrap; }
+
+.btn[hidden] { display: none; }

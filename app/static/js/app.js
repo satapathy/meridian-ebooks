@@ -154,6 +154,7 @@ const VIEWS = {
         <select class="in" id="cat" aria-label="Category"><option value="">All categories</option>${facets.categories.map((c) => `<option ${state.category === c.name ? "selected" : ""} value="${esc(c.name)}">${esc(c.name)} (${c.count})</option>`).join("")}</select>
         <select class="in" id="sort" aria-label="Sort">${SORT_OPTS.map(([v, l]) => `<option value="${v}" ${state.sort === v ? "selected" : ""}>${l}</option>`).join("")}</select>
         <button class="btn sm" id="order" title="Toggle sort order">${state.order === "asc" ? "↑ Asc" : "↓ Desc"}</button>
+        ${list ? `<button class="btn sm primary" id="bulk-btn" hidden>${icon("settings")}<span>Bulk edit</span></button>` : ""}
         <div class="seg" role="group" aria-label="View">
           <button class="btn sm ${list ? "" : "on"}" data-view="grid" aria-pressed="${!list}" title="Card view">${icon("grid")}</button>
           <button class="btn sm ${list ? "on" : ""}" data-view="list" aria-pressed="${list}" title="List view (table with all metadata)">${icon("list")}</button>
@@ -206,19 +207,25 @@ const VIEWS = {
       const sel = new Set(); let lastId = null;
       const bar = document.createElement("div"); bar.className = "bulkbar glass"; bar.hidden = true; root.append(bar);
       const rows = () => [...grid.querySelectorAll("tbody tr")];
+      const openBulk = () => document.getElementById("bulkedit").open({
+        ids: [...sel],
+        applied: (res) => { res.books.forEach((b) => emit("book-updated", b)); sel.clear(); paint(); },
+      });
+      const topBtn = root.querySelector("#bulk-btn");   // grab it now: `root` is emptied once the view is on the page
+      topBtn.onclick = openBulk;
       const paint = () => {
         const loaded = rows(), n = sel.size, all = grid.querySelector("#sel-all");
         for (const tr of loaded) { const on = sel.has(tr.dataset.id); tr.classList.toggle("sel", on); tr.querySelector(".c-sel input").checked = on; }
         all.checked = loaded.length > 0 && loaded.every((tr) => sel.has(tr.dataset.id));
         all.indeterminate = !all.checked && loaded.some((tr) => sel.has(tr.dataset.id));
+        const many = n >= 2;   // bulk editing needs at least two books; with 0 or 1 selected the buttons stay hidden
         bar.hidden = !n;
         bar.innerHTML = `<b>${n} selected</b>${n < total ? `<button class="btn sm" id="bb-all">Select all ${total}</button>` : ""}
-          <button class="btn sm primary" id="bb-edit">${icon("settings")}Edit fields…</button><button class="btn sm" id="bb-clear">Clear</button>`;
+          ${many ? `<button class="btn sm primary" id="bb-edit">${icon("settings")}Bulk edit</button>` : ""}<button class="btn sm" id="bb-clear">Clear</button>`;
         bar.querySelector("#bb-clear").onclick = () => { sel.clear(); paint(); };
-        bar.querySelector("#bb-edit").onclick = () => document.getElementById("bulkedit").open({
-          ids: [...sel],
-          applied: (res) => { res.books.forEach((b) => emit("book-updated", b)); sel.clear(); paint(); },
-        });
+        if (many) bar.querySelector("#bb-edit").onclick = openBulk;
+        topBtn.hidden = !many;
+        topBtn.querySelector("span").textContent = `Bulk edit (${n})`;
         const allBtn = bar.querySelector("#bb-all");
         if (allBtn) allBtn.onclick = async () => {   // every book matching the current filters, not just the loaded rows
           allBtn.disabled = true; allBtn.textContent = "Selecting…";
