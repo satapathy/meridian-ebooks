@@ -1,6 +1,6 @@
 // Web components (light DOM, themed by app.css).
 import { api, esc, icon, toast, coverHTML, fmtBytes, emit, THEMES, FONTS, clampFs, getPref, setPref,
-  progressHTML, setProgress, runBatches, batchMessage } from "./api.js";
+  progressHTML, setProgress, runBatches, batchMessage, googleSearchUrl } from "./api.js";
 
 const EXT_OK = new Set("epub pdf docx doc odt rtf txt md html htm mobi azw azw3 kfx fb2 djvu cbz cbr cb7 lit chm pdb zip json".split(" "));
 const extOf = (n) => n.split(".").pop().toLowerCase();
@@ -72,6 +72,7 @@ class MxDrawer extends HTMLElement {
             <div class="actions">
               <a class="btn primary" href="/api/books/${b.id}/download">${icon("download")}Download</a>
               ${b.format === "pdf" ? `<a class="btn" target="_blank" rel="noopener" href="/api/books/${b.id}/download?inline=true">${icon("book")}Read</a>` : ""}
+              <button class="btn" data-act="web-search" title="Opens Google in a new tab, searching for this book's title, author and ISBN as shown in the form below. Nothing is sent until you click.">${icon("search")}Search Google</button>
               <button class="btn" data-act="cover">${icon("image")}${b.cover_source === "user" ? "Replace cover" : "Upload cover"}</button>
               ${b.cover_source === "user" ? `<button class="btn" data-act="uncover" title="Go back to the cover embedded in the book">Remove custom cover</button>` : ""}
               <input type="file" accept="image/*" hidden id="cover-in">
@@ -175,6 +176,10 @@ class MxDrawer extends HTMLElement {
     };
     const cin = this.querySelector("#cover-in");
     this.querySelector('[data-act="cover"]').onclick = () => cin.click();
+    this.querySelector('[data-act="web-search"]').onclick = () => {      // uses the form as it is now, including unsaved edits
+      const f = Object.fromEntries([...this.querySelectorAll("#mform [name]")].map((e) => [e.name, e.value]));
+      window.open(googleSearchUrl(f), "_blank", "noopener,noreferrer");
+    };
     cin.onchange = async () => {
       if (!cin.files[0]) return;
       const fd = new FormData(); fd.append("file", cin.files[0]);
