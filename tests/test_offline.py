@@ -17,7 +17,7 @@ def own_sources():
 def test_own_static_files_reference_no_other_host(path):
     text = path.read_text(encoding="utf-8")
     text = re.sub(r"https?://www\.w3\.org/[^\s'\"]*", "", text)      # xmlns attributes
-    text = text.replace("https://www.google.com/search?q=", "")        # the book panel's Search button, see the test below
+    text = text.replace("https://www.google.com/search?q=", "")        # the book panel's Web search button, see the test below
     assert not EXTERNAL.findall(text), f"{path.name} mentions another host"
 
 
@@ -69,10 +69,10 @@ def test_bundled_assets_carry_their_licences():
     assert (ROOT / "LICENSE").read_text(encoding="utf-8").startswith("MIT License")
 
 
-def test_google_search_is_only_a_link_the_user_clicks():
-    """The one place that names another host: the book panel's Search button. It must open a new tab (window.open from a click),
+def test_web_search_is_only_a_link_the_user_clicks():
+    """The one place that names another host: the book panel's Web search button. It must open a new tab (window.open from a click),
     never be fetched by the app, and live in exactly one file."""
     js = {p.name: p.read_text(encoding="utf-8") for p in (STATIC / "js").glob("*.js")}
     assert [n for n, t in js.items() if "google.com" in t] == ["api.js"]
-    assert 'window.open(googleSearchUrl(f), "_blank", "noopener,noreferrer")' in js["components.js"]
-    assert not any(re.search(r"fetch\(\s*googleSearchUrl|api\(\s*googleSearchUrl", t) for t in js.values())
+    assert 'window.open(webSearchUrl(f), "_blank", "noopener,noreferrer")' in js["components.js"]
+    assert not any(re.search(r"fetch\(\s*webSearchUrl|api\(\s*webSearchUrl", t) for t in js.values())

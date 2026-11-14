@@ -69,7 +69,7 @@ Titles and author names shown are only labels.
 | Pillow | MIT-CMU (bundles libjpeg-turbo, zlib, FreeType and others under their own permissive licences) | runtime |
 | typing-extensions | PSF-2.0 | runtime |
 | pypdf | BSD-3-Clause | runtime (reads and writes PDF metadata) |
-| pypdfium2 (bundles Google's PDFium and its libraries) | BSD-3-Clause or Apache-2.0; PDFium BSD-3-Clause / Apache-2.0 plus the licences of its own dependencies, shipped inside the wheel | runtime (renders the first page of a PDF as its cover) |
+| pypdfium2 (bundles PDFium and its libraries) | BSD-3-Clause or Apache-2.0; PDFium BSD-3-Clause / Apache-2.0 plus the licences of its own dependencies, shipped inside the wheel | runtime (renders the first page of a PDF as its cover) |
 | pytest, pytest-cov | MIT | tests only |
 | coverage | Apache-2.0 | tests only |
 | httpx / httpcore, certifi | BSD-3-Clause, MPL-2.0 | tests only |

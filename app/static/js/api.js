@@ -127,9 +127,9 @@ export const batchMessage = (r, total, verb = "Updated") => `${verb} ${r.updated
   + (r.unchanged ? ` · ${r.unchanged} already fine` : "") + (r.failed.length ? ` · ${r.failed.length} failed` : "")
   + (r.error ? ` · stopped: ${r.error.message || "error"}` : r.stopped ? ` · stopped, ${r.remaining} not processed` : "");
 
-/** Google search URL for a book: quoted title, authors and the ISBN (else the word "book"). It is only ever opened by the user's click
- *  in a new tab - the app itself never contacts Google. */
-export function googleSearchUrl({ title = "", author = "", isbn = "" }) {
+/** Web-search URL for a book: quoted title, authors and the ISBN (else the word "book"). It is only ever opened by the user's click
+ *  in a new tab - the app itself never contacts the search site. */
+export function webSearchUrl({ title = "", author = "", isbn = "" }) {
   const authors = String(author).split(";").map((a) => a.trim()).filter(Boolean).join(" ");
   const q = [title.trim() ? `"${title.trim()}"` : "", authors, String(isbn).trim() || "book"].filter(Boolean).join(" ");
   return "https://www.google.com/search?q=" + encodeURIComponent(q);
