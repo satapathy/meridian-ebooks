@@ -16,14 +16,14 @@ def _store(upload: UploadFile):
     return tmp
 
 
-def _process(items: list[tuple], expand: bool, use_folders: bool, overwrite: bool) -> list[dict]:
+def _process(items: list[tuple], expand: bool, use_folders: bool, overwrite: bool, series: Optional[str] = None) -> list[dict]:
     """items = (tmp, name, rel_path, category). Books and archives first, metadata JSONs last."""
     results: list[dict] = []
     for tmp, name, rel, cat in sorted(items, key=lambda i: uploads.is_json(i[1])):
         if expand and name.lower().endswith(".zip"):
-            results += uploads.expand_zip(tmp, name, rel, use_folders, cat, overwrite)
+            results += uploads.expand_zip(tmp, name, rel, use_folders, cat, overwrite, series)
         else:
-            results.append(uploads.ingest_one(tmp, name, rel, cat, overwrite))
+            results.append(uploads.ingest_one(tmp, name, rel, cat, overwrite, series))
     return results
 
 
@@ -41,10 +41,11 @@ def _process(items: list[tuple], expand: bool, use_folders: bool, overwrite: boo
 def upload_books(
     files: list[UploadFile] = File(..., description="Ebook files and/or metadata JSON files"),
     category: Optional[str] = Form(None, description="Optional category for every uploaded book"),
+    series: Optional[str] = Form(None, description="Optional series for every uploaded book; replaces any series the file already has"),
     overwrite_json: bool = Form(False, description="Let JSON overwrite existing metadata that differs"),
 ):
     items = [(_store(f), f.filename or "book", None, category or None) for f in files]
-    results = _process(items, False, False, overwrite_json)
+    results = _process(items, False, False, overwrite_json, (series or "").strip() or None)
     return {"results": results, "summary": uploads.summarise(results)}
 
 
@@ -66,6 +67,7 @@ def upload_folder(
     category_from_folders: bool = Form(True),
     expand_archives: bool = Form(True),
     category: Optional[str] = Form(None, description="Fallback category when folders do not provide one"),
+    series: Optional[str] = Form(None, description="Optional series for every uploaded book; replaces any series the file already has"),
     overwrite_json: bool = Form(False, description="Let JSON overwrite existing metadata that differs"),
 ):
     items = []
@@ -73,5 +75,5 @@ def upload_folder(
         rel = (relative_paths[i] if i < len(relative_paths) else (f.filename or "book")).replace("\\", "/").lstrip("/")
         cat = (uploads.category_from_path(rel) if category_from_folders else None) or category or None
         items.append((_store(f), rel.split("/")[-1], rel, cat))
-    results = _process(items, expand_archives, category_from_folders, overwrite_json)
+    results = _process(items, expand_archives, category_from_folders, overwrite_json, (series or "").strip() or None)
     return {"results": results, "summary": uploads.summarise(results)}

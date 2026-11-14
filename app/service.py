@@ -540,12 +540,16 @@ def _list_grouped(where: str, params: list, col: str, direction: str, limit: int
 
 def facets() -> dict:
     with db() as conn:
-        rows = conn.execute("SELECT author, category, format, tags FROM books").fetchall()
+        rows = conn.execute("SELECT author, category, format, tags, series FROM books").fetchall()
     authors: dict[str, int] = {}
     cats: dict[str, int] = {}
     fmts: dict[str, int] = {}
     tags: dict[str, int] = {}
+    series: dict[str, list] = {}   # lower-case key -> [display name, count]
     for r in rows:
+        if r["series"].strip():
+            e = series.setdefault(r["series"].strip().lower(), [r["series"].strip(), 0])
+            e[1] += 1
         for a in split_authors(r["author"]) or ["Unknown"]:
             authors[a] = authors.get(a, 0) + 1
         c = r["category"] or "Uncategorized"
@@ -557,7 +561,8 @@ def facets() -> dict:
     def pack(d: dict) -> list[dict]:
         return [{"name": k, "count": v} for k, v in sorted(d.items(), key=lambda kv: (-kv[1], kv[0].lower()))]
 
-    return {"authors": pack(authors), "categories": pack(cats), "formats": pack(fmts), "tags": pack(tags)}
+    return {"authors": pack(authors), "categories": pack(cats), "formats": pack(fmts), "tags": pack(tags),
+            "series": pack({n: c for n, c in series.values()})}
 
 
 def stats() -> dict:

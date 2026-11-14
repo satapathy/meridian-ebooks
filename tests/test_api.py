@@ -313,3 +313,17 @@ def test_subtitle_edit_search_and_migration(client):
     con = sqlite3.connect(settings.db_path)
     assert "subtitle" in {r[1] for r in con.execute("PRAGMA table_info(books)")}
     con.close()
+
+
+def test_upload_with_series_overrides(client):
+    a = upload(client, "a.epub", make_epub(title="A", marker="s1"), series="  Saga  ")["book_id"]
+    assert client.get(f"/api/books/{a}").json()["series"] == "Saga"
+    r = client.post("/api/books/upload", files=[("files", ("b.epub", make_epub(title="B", marker="s2")))], data={"series": "Saga"})
+    b = r.json()["results"][0]["book_id"]
+    client.patch(f"/api/books/{b}", json={"series": "Old", "series_index": 4})
+    # a second upload without a series leaves things alone
+    c = upload(client, "c.epub", make_epub(title="C", marker="s3"))["book_id"]
+    assert client.get(f"/api/books/{c}").json()["series"] == ""
+    g = client.get("/api/books", params={"group_series": "true"}).json()
+    assert g["total"] == 3                      # "Saga", "Old" and the loose book
+    assert client.get(f"/api/books/{b}").json()["series"] == "Old"

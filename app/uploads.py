@@ -40,7 +40,8 @@ def is_junk(path: str) -> bool:
     return any(p == "__MACOSX" or p.startswith("._") for p in parts)
 
 
-def ingest_one(tmp: Path, name: str, rel_path: str | None, category: str | None, overwrite: bool = False) -> dict:
+def ingest_one(tmp: Path, name: str, rel_path: str | None, category: str | None, overwrite: bool = False,
+               series: str | None = None) -> dict:
     """Ingest one temp file (a book, or a metadata JSON), turning any failure into an error result."""
     label = rel_path or name
     try:
@@ -58,6 +59,11 @@ def ingest_one(tmp: Path, name: str, rel_path: str | None, category: str | None,
             return {"filename": label, "status": "skipped", "detail": "Unsupported file type"}
         res = service.ingest(tmp, name, source_path=rel_path, category=category)
         res["filename"] = label
+        if series and res.get("status") == "created":
+            # a series given at upload time replaces whatever the file carried; the number only survives for the same series
+            old = service.get_book(res["book_id"])
+            keep = old["series_index"] if old["series"].lower() == series.lower() else None
+            service.update_book(res["book_id"], {"series": series, "series_index": keep})
         return res
     except Exception as exc:  # keep one bad file from failing the whole batch
         tmp.unlink(missing_ok=True)
@@ -65,7 +71,7 @@ def ingest_one(tmp: Path, name: str, rel_path: str | None, category: str | None,
 
 
 def expand_zip(zip_tmp: Path, zip_name: str, rel_path: str | None, use_folders: bool,
-               category: str | None, overwrite: bool = False) -> list[dict]:
+               category: str | None, overwrite: bool = False, series: str | None = None) -> list[dict]:
     """Ingest everything useful inside an uploaded .zip: books first, then metadata JSONs."""
     results: list[dict] = []
     base = rel_path or zip_name
@@ -90,7 +96,7 @@ def expand_zip(zip_tmp: Path, zip_name: str, rel_path: str | None, use_folders: 
                 with z.open(info) as src, open(tmp, "wb") as dst:
                     shutil.copyfileobj(src, dst, 1024 * 1024)
                 cat = (category_from_path(inner) if use_folders else None) or category
-                results.append(ingest_one(tmp, os.path.basename(inner), label, cat, overwrite))
+                results.append(ingest_one(tmp, os.path.basename(inner), label, cat, overwrite, series))
     except zipfile.BadZipFile:
         results.append({"filename": base, "status": "error", "detail": "Not a valid zip archive"})
     finally:

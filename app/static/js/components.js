@@ -439,14 +439,14 @@ class MxUpload extends HTMLElement {
           <div style="font-size:15px"><b>Drag &amp; drop</b> files or whole folders here</div>
           <div class="row">
             <button class="btn" id="pick-files">${icon("book")}Choose files</button>
-            <button class="btn" id="pick-folder">${icon("folder")}Choose folder</button>
           </div>
           <input type="file" id="in-files" multiple hidden>
-          <input type="file" id="in-folder" webkitdirectory directory multiple hidden>
         </div>
         <div class="opts">
           <label class="field"><span>Category for loose files (optional)</span><input class="in" id="cat" list="up-cats" placeholder="e.g. Science Fiction"></label>
           <datalist id="up-cats"></datalist>
+          <label class="field"><span>Series for all these books (optional - replaces a series the book already has)</span><input class="in" id="ser" list="up-series" placeholder="Pick an existing series or type a new one"></label>
+          <datalist id="up-series"></datalist>
           <label class="check"><input type="checkbox" id="fold" checked><span>Use folder names as categories for folder uploads</span></label>
           <label class="check"><input type="checkbox" id="ovw"><span>Let imported JSON overwrite existing metadata that differs <span class="muted">(otherwise you get a warning with the differences)</span></span></label>
         </div>
@@ -465,9 +465,7 @@ class MxUpload extends HTMLElement {
     const $ = (s) => this.querySelector(s);
     $(".scrim").onclick = $("#cancel").onclick = () => { this.done = false; this.close(); };
     $("#pick-files").onclick = () => $("#in-files").click();
-    $("#pick-folder").onclick = () => $("#in-folder").click();
     $("#in-files").onchange = (e) => this.add([...e.target.files].map((f) => ({ file: f, rel: f.name, folder: false })));
-    $("#in-folder").onchange = (e) => this.add([...e.target.files].map((f) => ({ file: f, rel: f.webkitRelativePath || f.name, folder: true })));
     const drop = $("#drop");
     drop.ondragover = (e) => { e.preventDefault(); drop.classList.add("over"); };
     drop.ondragleave = () => drop.classList.remove("over");
@@ -475,13 +473,15 @@ class MxUpload extends HTMLElement {
     api("/facets", { quiet: true }).then((f) => {
       const dl = $("#up-cats");
       if (dl) dl.innerHTML = f.categories.filter((c) => c.name !== "Uncategorized").map((c) => `<option value="${esc(c.name)}">`).join("");
+      const sl = $("#up-series");
+      if (sl) sl.innerHTML = (f.series || []).map((x) => `<option value="${esc(x.name)}">${x.count} book${x.count === 1 ? "" : "s"}</option>`).join("");
     }).catch(() => {});
     $("#go").onclick = () => this.start();
   }
 
   async start() {
     const $ = (s) => this.querySelector(s);
-    const category = $("#cat").value.trim();
+    const category = $("#cat").value.trim(), series = $("#ser").value.trim();
     const useFolders = $("#fold").checked;
     const overwrite = $("#ovw").checked;
     const items = this.queue.slice();
@@ -519,6 +519,7 @@ class MxUpload extends HTMLElement {
           const folderBatch = batch.some((b) => b.folder || b.rel.includes("/"));
           for (const it of batch) { fd.append("files", it.file, it.file.name); if (folderBatch) fd.append("relative_paths", it.rel); }
           if (category) fd.append("category", category);
+          if (series) fd.append("series", series);
           if (folderBatch) fd.append("category_from_folders", useFolders);
           fd.append("overwrite_json", overwrite);
           try {
