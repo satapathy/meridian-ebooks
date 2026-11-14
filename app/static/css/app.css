@@ -389,6 +389,7 @@ body.auth-on:not(.is-admin) .admin-only { display: none !important; }
 .admin-badge { display: flex; align-items: center; gap: 8px; margin: 0 4px; padding: 8px 10px; border-radius: 10px; color: var(--on-accent); font-weight: 700; font-size: 0.75rem; letter-spacing: .06em; white-space: nowrap;
   background: linear-gradient(110deg, var(--a1), var(--a2)); box-shadow: 0 8px 26px -10px var(--a1); }
 .admin-badge[hidden] { display: none; }
+.dialog h2 svg { width: 1.1em; height: 1.1em; vertical-align: -0.15em; margin-right: 4px; }
 .admin-badge svg { width: 17px; height: 17px; flex: none; }
 .admin-badge span { flex: 1; }
 .admin-badge button { all: unset; cursor: pointer; font-size: 0.6875rem; letter-spacing: .04em; padding: 3px 8px; border-radius: 7px; background: rgba(0,0,0,.22); }
