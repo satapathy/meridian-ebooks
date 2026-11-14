@@ -14,7 +14,6 @@ services:
       - ${MERIDIAN_IMPORT:-./import}:/import:ro
     environment:
       MAX_ARCHIVE_BYTES: "8589934592"   # cap for an expanded .zip upload (8 GiB)
-      # admin mode (uploading, editing, deleting): set both in .env to require a login; empty = no access control
-      ADMIN_USER: "${MERIDIAN_ADMIN_USER:-}"
+      # admin mode (uploading, editing, deleting): set a password in .env to require a login; empty = no access control
       ADMIN_PASSWORD: "${MERIDIAN_ADMIN_PASSWORD:-}"
     restart: unless-stopped

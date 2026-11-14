@@ -10,7 +10,6 @@ from .conftest import make_epub
 
 @pytest.fixture()
 def locked(monkeypatch):
-    monkeypatch.setattr(settings, "admin_user", "boss")
     monkeypatch.setattr(settings, "admin_password", "s3cret!")
     auth._fails.clear()
 
@@ -22,7 +21,7 @@ def _up(client, **kw):
 def test_open_when_no_credentials_configured(client):
     assert client.get("/api/auth/status").json() == {"auth_enabled": False, "admin": True}
     assert _up(client).status_code == 200
-    assert client.post("/api/auth/login", json={"username": "x", "password": "y"}).status_code == 400
+    assert client.post("/api/auth/login", json={"password": "y"}).status_code == 400
 
 
 def test_reading_is_public_but_writes_need_admin(client, locked):
@@ -43,9 +42,8 @@ def test_reading_is_public_but_writes_need_admin(client, locked):
 
 
 def test_login_logout_cycle(client, locked):
-    assert client.post("/api/auth/login", json={"username": "boss", "password": "nope"}).status_code == 401
-    assert client.post("/api/auth/login", json={"username": "nobody", "password": "s3cret!"}).status_code == 401
-    r = client.post("/api/auth/login", json={"username": "boss", "password": "s3cret!"})
+    assert client.post("/api/auth/login", json={"password": "nope"}).status_code == 401
+    r = client.post("/api/auth/login", json={"password": "s3cret!"})
     assert r.status_code == 200 and "httponly" in r.headers["set-cookie"].lower() and "samesite=strict" in r.headers["set-cookie"].lower()
     assert client.get("/api/auth/status").json()["admin"] is True
     assert _up(client).status_code == 200
@@ -55,9 +53,11 @@ def test_login_logout_cycle(client, locked):
 
 
 def test_basic_auth_header_for_scripts(client, locked):
-    good = {"Authorization": "Basic " + base64.b64encode(b"boss:s3cret!").decode()}
-    bad = {"Authorization": "Basic " + base64.b64encode(b"boss:wrong").decode()}
+    good = {"Authorization": "Basic " + base64.b64encode(b"admin:s3cret!").decode()}
+    bad = {"Authorization": "Basic " + base64.b64encode(b"admin:wrong").decode()}
+    other_user = {"Authorization": "Basic " + base64.b64encode(b"root:s3cret!").decode()}
     assert _up(client, headers=bad).status_code == 401
+    assert _up(client, headers=other_user).status_code == 401      # the user name is always admin
     assert _up(client, headers=good).status_code == 200
 
 
@@ -68,12 +68,11 @@ def test_forged_expired_and_stale_tokens_rejected(client, locked, monkeypatch):
     monkeypatch.setattr(auth.time, "time", lambda: 10**10)
     assert not auth.valid_token(tok)                                   # expired
     monkeypatch.undo()
-    monkeypatch.setattr(settings, "admin_user", "boss")
     monkeypatch.setattr(settings, "admin_password", "changed")
     assert not auth.valid_token(tok)                                   # password changed -> old sessions die
 
 
 def test_lockout_after_repeated_failures(client, locked):
     for _ in range(auth.MAX_FAILS):
-        assert client.post("/api/auth/login", json={"username": "boss", "password": "bad"}).status_code == 401
-    assert client.post("/api/auth/login", json={"username": "boss", "password": "s3cret!"}).status_code == 429
+        assert client.post("/api/auth/login", json={"password": "bad"}).status_code == 401
+    assert client.post("/api/auth/login", json={"password": "s3cret!"}).status_code == 429

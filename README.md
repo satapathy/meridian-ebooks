@@ -55,7 +55,7 @@ Runs in one container, including on a Raspberry Pi.
 
 ![Settings panel with theme picker, font, text size and cover border controls](docs/screenshots/themes-settings.png)
 
-**Admin mode** - without a login the app is read-only. Click *Admin mode* in the left menu and sign in with the user and password you set in the environment; the menu then shows an *ADMIN MODE* badge.
+**Admin mode** - without a login the app is read-only. Click *Admin mode* in the left menu and enter the password you set in the environment; the menu then shows an *ADMIN MODE* badge.
 
 ![Admin mode login dialog](docs/screenshots/admin-login.png)
 
@@ -80,7 +80,6 @@ MERIDIAN_IMPORT=./import    # optional read-only folder for server-side imports
 MERIDIAN_UID=1000           # set to the output of `id -u`
 MERIDIAN_GID=1000           # set to the output of `id -g`
 MERIDIAN_PORT=8000
-MERIDIAN_ADMIN_USER=admin             # admin mode: see below
 MERIDIAN_ADMIN_PASSWORD=a-long-random-password
 ```
 
@@ -90,10 +89,10 @@ On Docker Desktop (Windows/macOS) permissions are usually not an issue.
 A ready-made template with every option is in [`.env.example`](.env.example).
 
 **Admin mode.** Anyone who can reach the app can browse, search, download and export. Uploading, editing metadata,
-deleting and the maintenance tools need admin mode: click **Admin mode** in the left menu and log in with
-`MERIDIAN_ADMIN_USER` / `MERIDIAN_ADMIN_PASSWORD`. While you are in admin mode the menu shows an **ADMIN MODE** badge;
-the session lasts 12 hours or until you click **Exit**. If either value is empty, access control is off and every
-write is allowed. Scripts can send HTTP Basic credentials instead of logging in. Serve the app over HTTPS (for example
+deleting and the maintenance tools need admin mode: click **Admin mode** in the left menu and log in with the
+password from `MERIDIAN_ADMIN_PASSWORD` (the user name is always `admin`). While you are in admin mode the menu shows an **ADMIN MODE** badge;
+the session lasts 12 hours or until you click **Exit**. If the password is empty, access control is off and every
+write is allowed. Scripts can send HTTP Basic credentials (user `admin`) instead of logging in. Serve the app over HTTPS (for example
 behind a reverse proxy) if it is reachable from outside your own network, because the password is sent when you log in.
 
 ## Run
@@ -151,7 +150,8 @@ docker compose logs -t | grep -i error # timestamps, filtered for errors
 
 docker compose stop                    # stop, keep the container
 docker compose start                   # start it again
-docker compose restart                 # restart (e.g. after changing .env)
+docker compose restart                 # restart (does NOT pick up .env changes)
+docker compose up -d                   # apply a changed .env (e.g. a new admin password): recreates the container, data is kept
 
 docker compose down                    # stop and remove the container (data folder is untouched)
 docker compose down --rmi local        # ...and the image too (frees disk space; the next `up --build` rebuilds it)
@@ -174,7 +174,7 @@ mkdir -p data
 
 | Requirement | How it works |
 |---|---|
-| Admin mode (access control) | Reading is open. Every route that changes the library (upload, edit, rename, covers, delete, bulk edit, cleanup, server import, thumbnail rebuild) needs admin mode, otherwise it answers `401`. Set `ADMIN_USER` and `ADMIN_PASSWORD` (`MERIDIAN_ADMIN_USER` / `MERIDIAN_ADMIN_PASSWORD` in `.env` for Docker Compose); if either is empty, nothing is restricted. In the UI use *Admin mode* in the left menu (12-hour session, `Exit` to leave). Scripts and Swagger's **Authorize** button use the same user and password as HTTP Basic credentials; `POST /api/auth/login` sets the cookie the UI uses. Five wrong passwords lock a client out for a minute. |
+| Admin mode (access control) | Reading is open. Every route that changes the library (upload, edit, rename, covers, delete, bulk edit, cleanup, server import, thumbnail rebuild) needs admin mode, otherwise it answers `401`. Set `ADMIN_PASSWORD` (`MERIDIAN_ADMIN_PASSWORD` in `.env` for Docker Compose); if it is empty, nothing is restricted. In the UI use *Admin mode* in the left menu (12-hour session, `Exit` to leave). Scripts and Swagger's **Authorize** button use the same password as HTTP Basic credentials (user `admin`); `POST /api/auth/login` sets the cookie the UI uses. Five wrong passwords lock a client out for a minute. |
 | Upload EPUB, PDF, DOCX, MOBI, AZW3, FB2, TXT, CBZ… | `POST /api/books/upload` (see `app/config.py` for the full list). The Add books dialog can also set a **category** and a **series** for the whole upload (`category`, `series` form fields); a series given here replaces any series the file already has. |
 | Upload whole folders recursively | `POST /api/books/upload-folder` takes files plus their relative paths (the UI uses the browser directory picker or drag-and-drop of folders; Chrome asks "Upload N files to this site?" for the picker, which a page cannot turn off, while dropping a folder does not). `.zip` archives are expanded recursively. `POST /api/import` imports a folder already on the server. Folder names can become categories. |
 | Import metadata JSON | Upload `*.json` (e.g. an exported `book-name-info.json`) alone, in a folder, in a `.zip`, or from the server import folder. It is matched to the book by `id`, then title (case-insensitive), then file name. **Books are always processed before JSON files.** Empty fields are filled in; if the JSON would change a value the book already has, nothing is applied and you get a `warning` listing each field's current vs. imported value. Tick "overwrite" (`overwrite_json=true`) to apply anyway. A category that was merely inferred from the upload folder name does not count as an existing value. |
@@ -239,15 +239,15 @@ The UI fonts (Latin subset, SIL Open Font License; licences in `app/static/fonts
 Regenerate the README screenshots against an empty throwaway instance (the script adds demo books and refuses to run on a library that already has books):
 
 ```bash
-DATA_DIR=./.demo-data uvicorn app.main:app --port 8000     # terminal 1 (add ADMIN_USER=a ADMIN_PASSWORD=b to also capture admin mode,
-                                                           # then pass --admin-user a --admin-password b to the script)
+DATA_DIR=./.demo-data uvicorn app.main:app --port 8000     # terminal 1 (add ADMIN_PASSWORD=b to also capture admin mode,
+                                                           # then pass --admin-password b to the script)
 pip install playwright                                     # once (uses an installed Edge/Chrome; or `playwright install chromium` and pass --browser chromium)
 python scripts/capture_screenshots.py                      # terminal 2 -> docs/screenshots/*.png
 ```
 
 ### Configuration and layout
 
-Environment: `DATA_DIR` (default `./data`), `IMPORT_DIR` (default `./import`), `MAX_ARCHIVE_BYTES`, `ADMIN_USER` and `ADMIN_PASSWORD` (admin mode; both empty = no access control) (see [Setting up the data folder](#setting-up-the-data-folder) for the Compose variables).
+Environment: `DATA_DIR` (default `./data`), `IMPORT_DIR` (default `./import`), `MAX_ARCHIVE_BYTES`, `ADMIN_PASSWORD` (admin mode; empty = no access control) (see [Setting up the data folder](#setting-up-the-data-folder) for the Compose variables).
 
 Layout: `app/service.py` (ingest, edit, search, cleanup), `app/metadata.py` (EPUB/PDF/DOCX read & write), `app/search.py` (query parser), `app/auth.py` (admin mode), `app/routers/` (API), `app/static/` (UI - plain ES modules and native web components, no build step).
 

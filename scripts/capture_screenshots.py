@@ -9,7 +9,7 @@ to run unless that library is empty:
     python scripts/capture_screenshots.py                       # terminal 2
 
 Options: --url http://127.0.0.1:8000   --browser msedge|chrome|chromium
-         --admin-user U --admin-password P   when the demo server has admin mode on (ADMIN_USER / ADMIN_PASSWORD):
+         --admin-password P   when the demo server has admin mode on (ADMIN_PASSWORD, user is always admin):
                                              the script logs in through the UI, so the shots show the full admin view,
                                              and it also writes admin-login.png (the login dialog)
 """
@@ -84,8 +84,7 @@ def capture(base: str, browser: str, creds=None) -> None:
             pg.wait_for_timeout(900)  # covers and web fonts
             if creds:
                 pg.click(".admin-nav")
-                pg.fill("#lg-user", creds[0])
-                pg.fill("mx-login input[type=password]", creds[1])
+                pg.fill("#lg-pw", creds[1])
                 if theme == "vanilla" and not (OUT / "_login_done").exists():
                     pg.wait_for_timeout(300)
                     pg.screenshot(path=str(OUT / "admin-login.png"))
@@ -113,11 +112,10 @@ def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--url", default="http://127.0.0.1:8000")
     ap.add_argument("--browser", default="msedge", help="msedge, chrome or chromium (Playwright's own build)")
-    ap.add_argument("--admin-user", default="")
     ap.add_argument("--admin-password", default="")
     a = ap.parse_args()
     base = a.url.rstrip("/")
-    creds = (a.admin_user, a.admin_password) if a.admin_user else None
+    creds = ("admin", a.admin_password) if a.admin_password else None
     seed(base + "/api", creds)
     capture(base, a.browser, creds)
     print("Wrote", ", ".join(sorted(f.name for f in OUT.glob("*.png"))), "to", OUT)

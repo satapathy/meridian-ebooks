@@ -176,7 +176,7 @@ export function setAuth(next) {
   if (before !== `${auth.enabled}${auth.admin}`) emit("auth-changed", { ...auth });
 }
 export const loadAuth = async () => { try { const s = await api("/auth/status", { quiet: true }); setAuth({ enabled: s.auth_enabled, admin: s.admin }); } catch {} };
-export const adminLogin = async (username, password) => { const s = await api("/auth/login", { json: { username, password }, quiet: true }); setAuth({ enabled: s.auth_enabled, admin: s.admin }); };
+export const adminLogin = async (password) => { const s = await api("/auth/login", { json: { password }, quiet: true }); setAuth({ enabled: s.auth_enabled, admin: s.admin }); };
 export const adminLogout = async () => { try { await api("/auth/logout", { method: "POST", quiet: true }); } catch {} setAuth({ admin: false }); };
 
 // ---- user preferences (theme, cover borders), persisted per browser

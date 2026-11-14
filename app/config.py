@@ -13,8 +13,7 @@ class Settings:
     def __init__(self) -> None:
         self.data_dir = Path(os.getenv("DATA_DIR", "./data")).resolve()
         self.import_dir = Path(os.getenv("IMPORT_DIR", "./import")).resolve()
-        # Admin mode: with both set, uploading, editing, deleting and maintenance need a login. Unset = no access control.
-        self.admin_user = os.getenv("ADMIN_USER", "").strip()
+        # Admin mode: with a password set, uploading, editing, deleting and maintenance need a login. Unset = no access control.
         self.admin_password = os.getenv("ADMIN_PASSWORD", "")
         # Safety cap for a single uploaded .zip archive once expanded (bytes).
         self.max_archive_bytes = int(os.getenv("MAX_ARCHIVE_BYTES", str(8 * 1024**3)))

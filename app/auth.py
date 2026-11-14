@@ -1,5 +1,5 @@
 """Admin mode. Everything can be read without logging in; changing the library (upload, edit, delete, maintenance)
-needs admin mode. The credentials come from the ADMIN_USER and ADMIN_PASSWORD environment variables. If either is
+needs admin mode. The password comes from the ADMIN_PASSWORD environment variable (the user name is always "admin"). If it is
 unset, access control is switched off and every write is allowed (the pre-existing behaviour)."""
 import hashlib
 import hmac
@@ -12,6 +12,7 @@ from pydantic import BaseModel
 
 from .config import settings
 
+USER = "admin"   # fixed; only the password is configurable
 COOKIE = "meridian_admin"
 SESSION_SECONDS = 12 * 3600
 MAX_FAILS, LOCK_SECONDS = 5, 60
@@ -21,12 +22,12 @@ _fails: dict[str, tuple[int, float]] = {}   # client ip -> (consecutive failures
 
 
 def enabled() -> bool:
-    return bool(settings.admin_user and settings.admin_password)
+    return bool(settings.admin_password)
 
 
 def _key() -> bytes:
-    # derived from the credentials: sessions survive a restart and stop working when the password changes
-    return hashlib.sha256(f"meridian-session|{settings.admin_user}|{settings.admin_password}".encode()).digest()
+    # derived from the password: sessions survive a restart and stop working when the password changes
+    return hashlib.sha256(f"meridian-session|{settings.admin_password}".encode()).digest()
 
 
 def _sig(payload: str) -> str:
@@ -47,12 +48,12 @@ def valid_token(token: str | None) -> bool:
 
 
 def check_credentials(user: str, password: str) -> bool:
-    ok_user = hmac.compare_digest(user.encode(), settings.admin_user.encode())
+    ok_user = hmac.compare_digest(user.encode(), USER.encode())
     ok_pass = hmac.compare_digest(password.encode(), settings.admin_password.encode())
     return ok_user and ok_pass
 
 
-_basic = HTTPBasic(auto_error=False, description="The admin user name and password (same as the web UI's Admin mode)")
+_basic = HTTPBasic(auto_error=False, description="User name `admin` and the admin password (the same password as the web UI's Admin mode)")
 
 
 def is_admin(request: Request, creds: HTTPBasicCredentials | None = None) -> bool:
@@ -70,7 +71,6 @@ def require_admin(request: Request, creds: HTTPBasicCredentials | None = Depends
 
 
 class Login(BaseModel):
-    username: str
     password: str
 
 
@@ -87,15 +87,15 @@ def status(request: Request):
              description="Sets an HttpOnly session cookie (12 hours). Five wrong attempts lock the client out for a minute.")
 def login(body: Login, request: Request, response: Response):
     if not enabled():
-        raise HTTPException(400, "Admin mode is not configured on this server (set ADMIN_USER and ADMIN_PASSWORD)")
+        raise HTTPException(400, "Admin mode is not configured on this server (set ADMIN_PASSWORD)")
     ip = request.client.host if request.client else "?"
     count, until = _fails.get(ip, (0, 0.0))
     if until > time.time():
         raise HTTPException(429, f"Too many attempts - try again in {int(until - time.time()) + 1}s")
-    if not check_credentials(body.username, body.password):
+    if not check_credentials(USER, body.password):
         count += 1
         _fails[ip] = (0, time.time() + LOCK_SECONDS) if count >= MAX_FAILS else (count, 0.0)
-        raise HTTPException(401, "Wrong user name or password")
+        raise HTTPException(401, "Wrong password")
     _fails.pop(ip, None)
     response.set_cookie(COOKIE, make_token(), max_age=SESSION_SECONDS, httponly=True, samesite="strict",
                         secure=request.url.scheme == "https", path="/")

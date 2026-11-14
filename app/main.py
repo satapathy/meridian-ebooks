@@ -1,4 +1,5 @@
 import json
+import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -10,6 +11,7 @@ from fastapi.staticfiles import StaticFiles
 from . import __version__
 from .config import settings
 from .db import init_db
+from . import auth
 from .auth import router as auth_router
 from .routers import books, library, upload
 
@@ -41,6 +43,11 @@ TAGS = [
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     init_db()
+    log = logging.getLogger("uvicorn.error")
+    if auth.enabled():
+        log.info("Admin mode is ON: uploading, editing and deleting need the admin password")
+    else:
+        log.warning("Admin mode is OFF (ADMIN_PASSWORD is not set): anyone who can reach this server can change the library")
     # stale temp files from an interrupted run
     for p in settings.tmp_dir.glob("*"):
         p.unlink(missing_ok=True)

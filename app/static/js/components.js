@@ -267,8 +267,8 @@ class MxLogin extends HTMLElement {
       <form class="dialog glass cf" role="dialog" aria-labelledby="lg-title" autocomplete="on">
         <h2 id="lg-title">${icon("shield")} Admin mode</h2>
         <div class="muted small">Browsing is open to everyone. Log in to upload, edit and delete.</div>
-        <label class="field" style="margin-top:12px"><span>User name</span><input class="in" name="username" id="lg-user" autocomplete="username" required></label>
-        <label class="field" style="margin-top:8px"><span>Password</span><input class="in" name="password" type="password" autocomplete="current-password" required></label>
+        <input type="text" name="username" value="admin" autocomplete="username" hidden>
+        <label class="field" style="margin-top:12px"><span>Password</span><input class="in" name="password" id="lg-pw" type="password" autocomplete="current-password" required></label>
         <div class="small" id="lg-err" role="alert" style="color:#ff6b81;min-height:1.2em;margin-top:8px"></div>
         <div class="dialog-actions"><button class="btn" type="button" id="lg-no">Cancel</button><button class="btn primary" type="submit" id="lg-go">${icon("lock")}Log in</button></div>
       </form>`;
@@ -281,11 +281,11 @@ class MxLogin extends HTMLElement {
       e.preventDefault();
       const go = $("#lg-go"); go.disabled = true; $("#lg-err").textContent = "";
       try {
-        await adminLogin($("#lg-user").value.trim(), e.target.password.value);
+        await adminLogin($("#lg-pw").value);
         done(); toast("Admin mode on");
       } catch (err) { go.disabled = false; $("#lg-err").textContent = err.message; e.target.password.select(); }
     };
-    $("#lg-user").focus();
+    $("#lg-pw").focus();
   }
 }
 customElements.define("mx-login", MxLogin);
