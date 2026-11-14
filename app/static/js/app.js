@@ -375,6 +375,12 @@ const VIEWS = {
         <label class="check" style="margin-top:10px"><input type="checkbox" id="iovw"><span>Let JSON files overwrite existing metadata that differs <span class="muted">(books are imported first, then JSON)</span></span></label>
         <div id="iprog"></div>
       </section>
+      <section class="glass" style="padding:22px;margin-bottom:18px">
+        <h2>Thumbnails</h2>
+        <p class="muted">The library tiles use a small <code>book-name_thumb.jpg</code> stored next to each book, so covers load fast. New books get one automatically; refresh to scan the whole library and (re)create them all.</p>
+        <button class="btn primary" id="thumbs">${icon("image")}Refresh thumbnails</button>
+        <div id="tprog"></div>
+      </section>
       <section class="glass" style="padding:22px">
         <h2>API</h2><p class="muted">Everything in this UI is available over REST.</p>
         <a class="btn primary" href="/docs" target="_blank" rel="noopener">Swagger UI</a> <a class="btn" href="/openapi.json" target="_blank" rel="noopener">openapi.json</a>
@@ -392,8 +398,24 @@ const VIEWS = {
       if (!confirm("Permanently remove the items listed in the scan?")) return;
       show(await api("/cleanup?dry_run=false", { method: "POST" })); clean.disabled = true; toast("Cleanup complete"); emit("library-changed");
     };
+    const tbox = root.querySelector("#tprog"), ibox = root.querySelector("#iprog");   // look up now: `root` is emptied once the page is shown
+    root.querySelector("#thumbs").onclick = async (e) => {
+      const btn = e.currentTarget, box = tbox;
+      btn.disabled = true;
+      try {
+        let job = await api("/thumbnails/rebuild", { method: "POST" });
+        while (job.status !== "done") {
+          const pct = job.total ? Math.round((job.processed / job.total) * 100) : 0;
+          box.innerHTML = `<div class="progress"><i style="width:${job.total ? pct : 5}%"></i></div><div class="muted small">${job.processed} / ${job.total || "?"} books · ${pct}%</div>`;
+          await new Promise((r) => setTimeout(r, 700));
+          job = await api("/thumbnails/rebuild");
+        }
+        box.innerHTML = `<div class="counts"><span class="pill in">${job.created} thumbnails</span><span class="pill">${job.no_cover} without a cover</span>${job.errors.length ? `<span class="pill side">${job.errors.length} errors</span>` : ""}</div>${job.errors.length ? `<div class="log">${job.errors.map((x) => `<div>${esc(x)}</div>`).join("")}</div>` : ""}`;
+        toast(`Thumbnails refreshed: ${job.created} created`, job.errors.length ? "err" : undefined);
+      } catch {} finally { btn.disabled = false; }
+    };
     root.querySelector("#imp").onclick = async () => {
-      const box = root.querySelector("#iprog");
+      const box = ibox;
       try {
         let job = await api("/import", { json: { path: root.querySelector("#ipath").value.trim(), category_from_folders: true, overwrite_json: root.querySelector("#iovw").checked } });
         while (job.status !== "done") {

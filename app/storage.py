@@ -9,7 +9,7 @@ from pathlib import Path
 
 from .config import settings
 
-_ILLEGAL = re.compile(r'[<>:"/\|?*\x00-\x1f]')
+_ILLEGAL = re.compile(r'[<>:"/\\|?*\x00-\x1f]')   # includes the backslash itself
 
 
 def uuid_to_rel_dir(book_id: str) -> str:
@@ -42,6 +42,11 @@ def sidecar_name(filename: str) -> str:
 def user_cover_name(filename: str) -> str:
     """Cover chosen by the user; lives next to the book and its -info.json."""
     return f"{os.path.splitext(filename)[0]}-cover.jpg"
+
+
+def thumb_name(filename: str) -> str:
+    """Small cover used for the library tiles; lives next to the book as `<book-name>_thumb.jpg`."""
+    return f"{os.path.splitext(filename)[0]}_thumb.jpg"
 
 
 def prune_empty_parents(path: Path) -> None:

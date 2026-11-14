@@ -61,7 +61,7 @@ class MxDrawer extends HTMLElement {
       <aside class="panel" role="dialog" aria-label="Book details">
         <button class="btn sm close" aria-label="Close">${icon("x")}</button>
         <div class="d-top">
-          <div class="poster">${coverHTML(b)}<span class="fmt">${esc(b.format)}</span></div>
+          <div class="poster">${coverHTML(b, true)}<span class="fmt">${esc(b.format)}</span></div>
           <div>
             <div class="eyebrow">${esc(b.category || "Uncategorized")}${b.subcategory ? " › " + esc(b.subcategory) : ""}</div>
             <h2>${esc(b.title)}</h2>
@@ -409,7 +409,7 @@ async function walkEntry(entry, path = "") {
 class MxUpload extends HTMLElement {
   connectedCallback() { this.queue = []; this.render(); }
   open(items = []) { this.classList.add("open"); if (items.length) this.add(items); }
-  close() { if (this.busy) return; this.classList.remove("open"); this.queue = []; this.render(); }
+  close() { if (this.busy) return; this.classList.remove("open"); this.queue = []; this.ignored = 0; this.render(); }
 
   async addFromDataTransfer(dt) {
     const entries = [...dt.items].map((i) => i.webkitGetAsEntry?.()).filter(Boolean);
@@ -439,8 +439,10 @@ class MxUpload extends HTMLElement {
           <div style="font-size:15px"><b>Drag &amp; drop</b> files or whole folders here</div>
           <div class="row">
             <button class="btn" id="pick-files">${icon("book")}Choose files</button>
+            <button class="btn" id="pick-folder">${icon("folder")}Choose folder</button>
           </div>
           <input type="file" id="in-files" multiple hidden>
+          <input type="file" id="in-folder" webkitdirectory directory multiple hidden>
         </div>
         <div class="opts">
           <label class="field"><span>Category for loose files (optional)</span><input class="in" id="cat" list="up-cats" placeholder="e.g. Science Fiction"></label>
@@ -465,7 +467,9 @@ class MxUpload extends HTMLElement {
     const $ = (s) => this.querySelector(s);
     $(".scrim").onclick = $("#cancel").onclick = () => { this.done = false; this.close(); };
     $("#pick-files").onclick = () => $("#in-files").click();
+    $("#pick-folder").onclick = () => $("#in-folder").click();
     $("#in-files").onchange = (e) => this.add([...e.target.files].map((f) => ({ file: f, rel: f.name, folder: false })));
+    $("#in-folder").onchange = (e) => this.add([...e.target.files].map((f) => ({ file: f, rel: f.webkitRelativePath || f.name, folder: true })));
     const drop = $("#drop");
     drop.ondragover = (e) => { e.preventDefault(); drop.classList.add("over"); };
     drop.ondragleave = () => drop.classList.remove("over");
@@ -500,16 +504,8 @@ class MxUpload extends HTMLElement {
         ${issues.length ? `<div class="log">${issues.slice(0, 300).map((i) => `<div class="${i.status}"><em>${i.status}</em><span>${esc(i.filename)}${i.title ? " → “" + esc(i.title) + "”" : ""}${i.detail ? " — " + esc(i.detail) : ""}${
           i.status === "warning" && i.diffs ? `<ul class="diffs">${i.diffs.map((d) => `<li><b>${esc(d.field)}</b>: <s>${esc(fmtVal(d.current))}</s> → ${esc(fmtVal(d.imported))}</li>`).join("")}</ul>` : ""}</span></div>`).join("")}</div>` : ""}`;
     };
-    // Batches bounded by count and size. Books go first; metadata JSON files only after every book is in.
-    const makeBatches = (list) => {
-      const out = []; let cur = [], curSize = 0;
-      for (const it of list) {
-        if (cur.length && (cur.length >= 12 || curSize + it.file.size > 80 * 1024 * 1024)) { out.push(cur); cur = []; curSize = 0; }
-        cur.push(it); curSize += it.file.size;
-      }
-      if (cur.length) out.push(cur);
-      return out;
-    };
+    // One request per file, so the progress bar moves with every book. Books go first; metadata JSON files only after every book is in.
+    const makeBatches = (list) => list.map((it) => [it]);
     const runPhase = async (batches, workers) => {
       let next = 0;
       const worker = async () => {
@@ -537,7 +533,7 @@ class MxUpload extends HTMLElement {
     };
     const isJson = (it) => extOf(it.file.name) === "json";
     paint();
-    await runPhase(makeBatches(items.filter((i) => !isJson(i))), 3);   // 1) books
+    await runPhase(makeBatches(items.filter((i) => !isJson(i))), 4);   // 1) books
     await runPhase(makeBatches(items.filter(isJson)), 1);               // 2) metadata JSON
     this.busy = false; this.done = true; this.queue = [];
     paint(true);  // stops the bar's shimmer animation

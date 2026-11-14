@@ -134,3 +134,18 @@ def test_cover_colors_pick_the_artwork_not_the_border(client):
     red, green, blue = (int(d[a][i:i + 2], 16) for i in (1, 3, 5))
     assert red > 180 and green < 60 and blue < 60
     assert d[b] is None and d["nope"] is None                                 # no cover / unknown id -> null
+
+
+def test_backslash_is_not_kept_in_file_names():
+    from app.storage import sanitize_component
+    assert "\\" not in sanitize_component("AC\DC")
+
+
+def test_series_sort_direction_applies_to_series_name_too(client):
+    for n, s in enumerate(["Alpha", "Zulu"]):
+        bid = client.post("/api/books/upload", files=[("files", (f"{n}.epub", make_epub(title=f"T{n}", marker=f"sd{n}")))]).json()["results"][0]["book_id"]
+        client.patch(f"/api/books/{bid}", json={"series": s, "series_index": 1})
+    for group in ("false", "true"):
+        asc = [b["series"] for b in client.get("/api/books", params={"sort": "series", "order": "asc", "group_series": group}).json()["items"]]
+        desc = [b["series"] for b in client.get("/api/books", params={"sort": "series", "order": "desc", "group_series": group}).json()["items"]]
+        assert asc == ["Alpha", "Zulu"] and desc == ["Zulu", "Alpha"], (group, asc, desc)

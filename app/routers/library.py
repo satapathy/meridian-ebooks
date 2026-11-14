@@ -13,7 +13,7 @@ from starlette.background import BackgroundTask
 from .. import service, uploads
 from ..config import settings
 from ..exporter import build_export
-from ..schemas import Facets, ImportJob, ImportRequest
+from ..schemas import Facets, ImportJob, ImportRequest, ThumbJob
 
 router = APIRouter()
 _jobs: dict[str, dict] = {}
@@ -55,6 +55,41 @@ def export_library(
     return FileResponse(path, media_type="application/zip", filename=name,
                         headers={"X-Book-Count": str(count)},
                         background=BackgroundTask(lambda: path.unlink(missing_ok=True)))
+
+
+# ------------------------------------------------------------------ thumbnails
+_thumb_job: dict = {"id": "", "status": "idle", "total": 0, "processed": 0, "created": 0, "no_cover": 0, "errors": []}
+
+
+def _run_thumbs() -> None:
+    def progress(done: int, total: int) -> None:
+        _thumb_job.update(processed=done, total=total)
+
+    try:
+        res = service.rebuild_thumbnails(progress)
+        _thumb_job.update(created=res["created"], no_cover=res["no_cover"], errors=res["errors"][:50], total=res["total"])
+    except Exception as exc:
+        _thumb_job["errors"] = [str(exc)[:200]]
+    finally:
+        _thumb_job["status"] = "done"
+
+
+@router.post(
+    "/thumbnails/rebuild", response_model=ThumbJob, tags=["Library"], summary="Regenerate every book's thumbnail",
+    description="Scans the whole library and writes `<book-name>_thumb.jpg` next to each book (from its user cover, else its embedded cover). "
+                "Runs in the background - poll `GET /thumbnails/rebuild`. A second call while one is running returns the running job.",
+)
+def rebuild_thumbs(background: BackgroundTasks):
+    with _jobs_lock:
+        if _thumb_job["status"] != "running":
+            _thumb_job.update(id=uuid.uuid4().hex[:12], status="running", total=0, processed=0, created=0, no_cover=0, errors=[])
+            background.add_task(_run_thumbs)
+        return dict(_thumb_job)
+
+
+@router.get("/thumbnails/rebuild", response_model=ThumbJob, tags=["Library"], summary="Thumbnail rebuild progress")
+def thumbs_status():
+    return dict(_thumb_job)
 
 
 @router.get("/duplicates", tags=["Library"], summary="List groups of duplicate books (same MD5)")

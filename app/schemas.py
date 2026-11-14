@@ -141,6 +141,16 @@ class ImportRequest(BaseModel):
     overwrite_json: bool = Field(False, description="Let imported JSON files overwrite existing metadata that differs")
 
 
+class ThumbJob(BaseModel):
+    id: str
+    status: str = Field(description="idle | running | done")
+    total: int
+    processed: int
+    created: int = Field(description="Thumbnails written")
+    no_cover: int = Field(description="Books without a cover (any old thumbnail is removed)")
+    errors: list[str]
+
+
 class ImportJob(BaseModel):
     id: str
     status: str

@@ -74,6 +74,19 @@ def download(book_id: str, inline: bool = Query(False, description="Open in the 
                         content_disposition_type="inline" if inline else "attachment")
 
 
+@router.get("/{book_id}/thumb", summary="Small cover image for tiles (JPEG)",
+            description="The `<book-name>_thumb.jpg` made by *Tools > Refresh thumbnails*. Falls back to the full cover when it does not exist yet.",
+            responses={404: {"description": "No cover"}})
+def thumb(book_id: str):
+    p = service.thumb_file(book_id)
+    if p:  # the URL is versioned (?v=updated_at) and the file only changes when the cover does
+        return FileResponse(p, media_type="image/jpeg", headers={"Cache-Control": "public, max-age=2592000"})
+    p = service.cover_file(book_id)
+    if not p:
+        raise HTTPException(404, "No cover")
+    return FileResponse(p, media_type="image/jpeg", headers={"Cache-Control": "public, max-age=60"})
+
+
 @router.get("/{book_id}/cover", summary="Cover image (JPEG)", responses={404: {"description": "No cover"}})
 def cover(book_id: str):
     p = service.cover_file(book_id)

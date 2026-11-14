@@ -17,7 +17,7 @@ from .db import db
 from .search import parse_query
 from .storage import (
     book_dir, folder_size, prune_empty_parents, remove_book_dir, safe_filename, sanitize_component,
-    sidecar_name, user_cover_name, uuid_to_rel_dir,
+    sidecar_name, thumb_name, user_cover_name, uuid_to_rel_dir,
 )
 
 log = logging.getLogger("meridian.service")
@@ -117,6 +117,58 @@ def cover_file(book_id: str) -> Path | None:
     return None
 
 
+THUMB_HEIGHT = 400   # px; tiles are ~170px wide, so this stays sharp on high-DPI screens
+
+
+def thumb_file(book_id: str) -> Path | None:
+    """The small tile image, if it has been generated."""
+    with db() as conn:
+        row = conn.execute("SELECT filename FROM books WHERE id=?", (book_id,)).fetchone()
+    if not row:
+        return None
+    p = book_dir(book_id) / thumb_name(row["filename"])
+    return p if p.exists() else None
+
+
+def make_thumb(book_id: str, filename: str | None = None, source: bytes | None = None) -> bool:
+    """(Re)write `<book-name>_thumb.jpg` from the cover that is displayed (user cover wins over the embedded one).
+    A book without a cover loses any stale thumbnail. Returns True when a thumbnail now exists."""
+    if filename is None:
+        with db() as conn:
+            row = conn.execute("SELECT filename FROM books WHERE id=?", (book_id,)).fetchone()
+        if not row:
+            return False
+        filename = row["filename"]
+    path = book_dir(book_id) / thumb_name(filename)
+    if source is None:
+        src = next((p for p in (book_dir(book_id) / user_cover_name(filename), book_dir(book_id) / "cover.jpg") if p.exists()), None)
+        source = src.read_bytes() if src else None
+    jpeg = md.make_cover_jpeg(source, max_height=THUMB_HEIGHT) if source else None
+    if not jpeg:
+        path.unlink(missing_ok=True)
+        return False
+    path.write_bytes(jpeg)
+    return True
+
+
+def rebuild_thumbnails(progress=None) -> dict:
+    """Scan the whole library and regenerate every thumbnail. `progress(done, total)` is called after each book."""
+    with db() as conn:
+        rows = conn.execute("SELECT id, filename FROM books").fetchall()
+    out = {"total": len(rows), "created": 0, "no_cover": 0, "errors": []}
+    for i, r in enumerate(rows, 1):
+        try:
+            if make_thumb(r["id"], r["filename"]):
+                out["created"] += 1
+            else:
+                out["no_cover"] += 1
+        except Exception as exc:
+            out["errors"].append(f"{r['filename']}: {str(exc)[:120]}")
+        if progress:
+            progress(i, len(rows))
+    return out
+
+
 _color_cache: "dict[tuple, str | None]" = {}
 
 
@@ -156,7 +208,7 @@ def cover_colors(ids: list[str]) -> dict[str, str | None]:
     """Predominant cover colour per book id (None when the book has no cover). Cached until the cover file changes."""
     out: dict[str, str | None] = {}
     for bid in dict.fromkeys(ids):
-        p = cover_file(bid)
+        p = thumb_file(bid) or cover_file(bid)   # the thumbnail is much cheaper to analyse
         if not p:
             out[bid] = None
             continue
@@ -237,6 +289,7 @@ def ingest(tmp_path: Path, original_name: str, *, source_path: str | None = None
                     jpeg = md.make_cover_jpeg(cover)
                     if jpeg:
                         (bdir / "cover.jpg").write_bytes(jpeg)
+                        make_thumb(book_id, filename, jpeg)
                         has_cover = 1
                 embedded = sorted(f for f in md.EMBEDDABLE.get(ext, set()) if _nonempty(meta.get(f)))
                 ts = now()
@@ -384,6 +437,9 @@ def rename_file(book_id: str, new_name: str) -> dict:
         old_cv, new_cv = bdir / user_cover_name(old), bdir / user_cover_name(new)
         if old_cv.exists():
             os.replace(old_cv, new_cv)
+        old_th, new_th = bdir / thumb_name(old), bdir / thumb_name(new)
+        if old_th.exists():
+            os.replace(old_th, new_th)
         old_sc, new_sc = bdir / sidecar_name(old), bdir / sidecar_name(new)
         if old_sc.exists():
             os.replace(old_sc, new_sc)
@@ -405,6 +461,7 @@ def replace_cover(book_id: str, data: bytes) -> dict:
     with _write_lock, db() as conn:
         row = _get_row(conn, book_id)
         (book_dir(book_id) / user_cover_name(row["filename"])).write_bytes(jpeg)
+        make_thumb(book_id, row["filename"], jpeg)
         conn.execute("UPDATE books SET has_cover=1, updated_at=? WHERE id=?", (now(), book_id))
         return to_book(_get_row(conn, book_id))
 
@@ -415,6 +472,7 @@ def remove_user_cover(book_id: str) -> dict:
         row = _get_row(conn, book_id)
         (book_dir(book_id) / user_cover_name(row["filename"])).unlink(missing_ok=True)
         has = 1 if (book_dir(book_id) / "cover.jpg").exists() else 0
+        make_thumb(book_id, row["filename"])     # back to the embedded cover (or none)
         conn.execute("UPDATE books SET has_cover=?, updated_at=? WHERE id=?", (has, now(), book_id))
         return to_book(_get_row(conn, book_id))
 
@@ -453,6 +511,11 @@ SORTS = {
     "tags": "tags COLLATE NOCASE", "publisher": "publisher COLLATE NOCASE", "language": "language COLLATE NOCASE",
     "isbn": "isbn", "filename": "filename COLLATE NOCASE", "description": "description COLLATE NOCASE",
 }
+
+
+def _order(col: str, direction: str) -> str:
+    """ORDER BY terms with the direction applied to every part of a compound sort (e.g. series, then number)."""
+    return ", ".join(f"{part} {direction}" for part in col.split(", "))
 
 
 def _escape_like(s: str) -> str:
@@ -503,7 +566,7 @@ def list_books(*, q=None, author=None, category=None, fmt=None, tag=None, series
     with db() as conn:
         total = conn.execute(f"SELECT COUNT(*) FROM books{where}", params).fetchone()[0]
         rows = conn.execute(
-            f"SELECT * FROM books{where} ORDER BY {col} {direction}, title COLLATE NOCASE ASC LIMIT ? OFFSET ?",
+            f"SELECT * FROM books{where} ORDER BY {_order(col, direction)}, title COLLATE NOCASE ASC LIMIT ? OFFSET ?",
             [*params, limit, offset],
         ).fetchall()
         items = [to_book(r) for r in rows]
@@ -521,7 +584,7 @@ def _list_grouped(where: str, params: list, col: str, direction: str, limit: int
     with db() as conn:
         total = conn.execute(base + "SELECT COUNT(*) FROM r WHERE rn = 1", params).fetchone()[0]
         rows = conn.execute(
-            base + f"SELECT * FROM r WHERE rn = 1 ORDER BY {col} {direction}, title COLLATE NOCASE ASC LIMIT ? OFFSET ?",
+            base + f"SELECT * FROM r WHERE rn = 1 ORDER BY {_order(col, direction)}, title COLLATE NOCASE ASC LIMIT ? OFFSET ?",
             [*params, limit, offset],
         ).fetchall()
         names = sorted({r["series"].lower() for r in rows if r["series"]})

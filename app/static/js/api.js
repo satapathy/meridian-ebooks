@@ -76,13 +76,35 @@ export function fmtBytes(n) {
 }
 
 /** Cover art: the real image when present, otherwise a generative gradient cover. */
-export function coverHTML(b) {
-  if (b.has_cover) {
-    return `<mx-cover><img loading="lazy" alt="" src="/api/books/${b.id}/cover?v=${encodeURIComponent(b.updated_at)}"></mx-cover>`;
-  }
+export function coverHTML(b, full = false) {
   const h = hue(b.title + b.author);
-  return `<mx-cover><div class="gen" style="--h:${h};--h2:${(h + 55) % 360}"><b>${esc(b.title)}</b><span>${esc(b.authors?.[0] || b.format)}</span></div></mx-cover>`;
+  const gen = `<div class="gen" style="--h:${h};--h2:${(h + 55) % 360}"><b>${esc(b.title)}</b><span>${esc(b.authors?.[0] || b.format)}</span></div>`;
+  if (!b.has_cover) return `<mx-cover>${gen}</mx-cover>`;
+  // the tile shows the generated cover at once; the real (small) image is fetched afterwards, when the tile is on screen
+  return `<mx-cover data-src="/api/books/${b.id}/${full ? "cover" : "thumb"}?v=${encodeURIComponent(b.updated_at)}">${gen}</mx-cover>`;
 }
+
+/** Lazy cover: the book tiles are painted first, then each image loads as its tile nears the viewport. */
+const coverObserver = "IntersectionObserver" in window ? new IntersectionObserver((entries) => {
+  for (const e of entries) if (e.isIntersecting) { coverObserver.unobserve(e.target); e.target.load(); }
+}, { rootMargin: "300px" }) : null;
+customElements.define("mx-cover", class extends HTMLElement {
+  connectedCallback() {
+    if (!this.dataset.src || this.dataset.loaded) return;
+    if (coverObserver) coverObserver.observe(this); else this.load();
+  }
+  disconnectedCallback() { coverObserver?.unobserve(this); }
+  load() {
+    const src = this.dataset.src;
+    if (!src || this.dataset.loaded) return;
+    this.dataset.loaded = "1";
+    const img = new Image();
+    img.alt = "";
+    img.decoding = "async";
+    img.onload = () => { img.classList.add("in"); this.replaceChildren(img); };   // on error the generated cover simply stays
+    img.src = src;
+  }
+});
 
 const _colors = new Map();   // "id:updated_at" -> css colour
 export const fallbackColor = (b) => `hsl(${hue(b.title + b.author)} 62% 42%)`;   // same hue as the generated cover

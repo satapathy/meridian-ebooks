@@ -327,3 +327,31 @@ def test_upload_with_series_overrides(client):
     g = client.get("/api/books", params={"group_series": "true"}).json()
     assert g["total"] == 3                      # "Saga", "Old" and the loose book
     assert client.get(f"/api/books/{b}").json()["series"] == "Old"
+
+
+def test_thumbnails_created_served_and_rebuilt(client):
+    import io, time
+    from PIL import Image
+    from app.service import thumb_file
+    img = Image.new("RGB", (800, 1200), (200, 30, 30)); buf = io.BytesIO(); img.save(buf, "PNG")
+    a = upload(client, "a.epub", make_epub(title="A", marker="th1"))["book_id"]
+    b = upload(client, "b.epub", make_epub(title="B", marker="th2"))["book_id"]
+    client.put(f"/api/books/{a}/cover", files={"file": ("c.png", buf.getvalue(), "image/png")})
+    t = thumb_file(a)
+    assert t and t.name == "a_thumb.jpg" and Image.open(t).height <= 400     # next to the book, bounded size
+    assert client.get(f"/api/books/{a}/thumb").content == t.read_bytes()
+    t.unlink()
+    assert client.get(f"/api/books/{a}/thumb").status_code == 200             # falls back to the full cover
+    job = client.post("/api/thumbnails/rebuild").json()
+    assert job["status"] in ("running", "done")
+    for _ in range(50):
+        job = client.get("/api/thumbnails/rebuild").json()
+        if job["status"] == "done":
+            break
+        time.sleep(0.1)
+    assert job["status"] == "done" and job["total"] == 2 and job["created"] + job["no_cover"] == 2
+    assert thumb_file(a) is not None
+    new = client.post(f"/api/books/{a}/rename", json={"filename": "renamed"}).json()
+    assert thumb_file(a).name == "renamed_thumb.jpg"
+    client.delete(f"/api/books/{a}/cover")
+    assert client.get(f"/api/books/{b}/thumb").status_code in (200, 404)

@@ -194,6 +194,8 @@ mx-card:hover .poster::after { background-position: 150% 0; }
 
 mx-cover { display: block; width: 100%; height: 100%; }
 mx-cover img { width: 100%; height: 100%; object-fit: fill; display: block; }
+mx-cover img.in { animation: coverin .25s ease; }
+@keyframes coverin { from { opacity: 0; } }
 mx-cover .gen { position: relative; width: 100%; height: 100%; padding: 16% 12% 12%; display: flex; flex-direction: column; justify-content: space-between; color: #fff; overflow: hidden;
   background: radial-gradient(circle at 85% 12%, hsl(var(--h2) 90% 62% / .55), transparent 45%), linear-gradient(160deg, hsl(var(--h) 62% 38%), hsl(var(--h2) 65% 17%)); }
 mx-cover .gen::before { content: ""; position: absolute; width: 90%; aspect-ratio: 1; border-radius: 50%; right: -35%; bottom: -20%; border: 1.5px solid rgba(255,255,255,.22); box-shadow: 0 0 0 14px rgba(255,255,255,.05), 0 0 0 30px rgba(255,255,255,.035); }
