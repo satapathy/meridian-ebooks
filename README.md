@@ -3,6 +3,9 @@
 A dockerized, self-hosted ebook library: FastAPI backend with a Swagger page, and a Plex-style browser UI.
 Runs in one container, including on a Raspberry Pi.
 
+[![Read on Medium](https://img.shields.io/badge/Read%20on-Medium-black?logo=medium)](https://medium.com/@ssatapathy/build-your-own-netflix-style-ebook-library-on-a-raspberry-pi-ec97ec36f5f6)
+📖 **Step-by-step guide:** [Build Your Own Netflix-Style Ebook Library on a Raspberry Pi](https://medium.com/@ssatapathy/build-your-own-netflix-style-ebook-library-on-a-raspberry-pi-ec97ec36f5f6)
+
 ## Highlights
 
 *One bullet per feature - add or remove lines as the app changes. Details live in [Features](#features).*
