@@ -162,6 +162,8 @@ class MxDrawer extends HTMLElement {
         const s = this.book.storage;
         toast(`Saved · ${s.embedded.length ? "written into the file" : "stored in sidecar"}${s.embedded.length && s.sidecar.length ? " + sidecar" : ""}`);
         emit("book-updated", this.book);
+        // grouped grid: a new/changed series (or number) changes which tiles exist, so reload the list
+        if (this.book.series !== b.series || this.book.series_index !== b.series_index) emit("library-changed");
         this.close();
       } catch {} finally { btn.disabled = false; }
     };
