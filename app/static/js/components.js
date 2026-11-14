@@ -97,6 +97,7 @@ class MxDrawer extends HTMLElement {
             <div class="field"><span>Rating</span><div class="stars-in" id="stars">${stars(b.rating || 0)}</div></div>
             <label class="field full"><span>Tags — comma separated</span><input class="in" name="tags" value="${esc(b.tags.join(", "))}"></label>
             <label class="field full"><span>Description</span><textarea class="in" name="description">${esc(b.description)}</textarea></label>
+            <div class="full" id="save-prog" hidden><div class="progress indet" role="progressbar" aria-label="Saving metadata"><i></i></div><div class="small muted">Saving…</div></div>
             <div class="full" style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
               <div class="storage">
                 ${st.embedded.length ? `<span class="muted">In file:</span>${st.embedded.map((f) => `<span class="pill in">${f}</span>`).join("")}` : ""}
@@ -157,6 +158,7 @@ class MxDrawer extends HTMLElement {
       body.rating = rating;
       body.tags = body.tags.split(",").map((t) => t.trim()).filter(Boolean);
       const btn = e.submitter || e.target.querySelector("[type=submit]"); btn.disabled = true;
+      const prog = this.querySelector("#save-prog"); prog.hidden = false;
       try {
         this.book = await api("/books/" + b.id, { method: "PATCH", json: body });
         const s = this.book.storage;
@@ -165,7 +167,7 @@ class MxDrawer extends HTMLElement {
         // grouped grid: a new/changed series (or number) changes which tiles exist, so reload the list
         if (this.book.series !== b.series || this.book.series_index !== b.series_index) emit("library-changed");
         this.close();
-      } catch {} finally { btn.disabled = false; }
+      } catch {} finally { btn.disabled = false; prog.hidden = true; }
     };
     this.querySelector("#rform").onsubmit = async (e) => {
       e.preventDefault();
