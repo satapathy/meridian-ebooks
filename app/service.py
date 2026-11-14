@@ -459,8 +459,10 @@ def _escape_like(s: str) -> str:
     return s.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
 
 
-def _where(q=None, author=None, category=None, fmt=None, tag=None, series=None, subcategory=None) -> tuple[str, list]:
+def _where(q=None, author=None, category=None, fmt=None, tag=None, series=None, subcategory=None, in_series=False) -> tuple[str, list]:
     parts, params = [], []
+    if in_series:
+        parts.append("TRIM(series) != ''")
     if q:
         sql, p = parse_query(q)
         if sql:
@@ -492,8 +494,8 @@ def _where(q=None, author=None, category=None, fmt=None, tag=None, series=None, 
 
 
 def list_books(*, q=None, author=None, category=None, fmt=None, tag=None, series=None, subcategory=None,
-               sort="added", order="desc", limit=60, offset=0, group_series=False) -> dict:
-    where, params = _where(q, author, category, fmt, tag, series, subcategory)
+               sort="added", order="desc", limit=60, offset=0, group_series=False, in_series=False) -> dict:
+    where, params = _where(q, author, category, fmt, tag, series, subcategory, in_series)
     col = SORTS.get(sort, SORTS["added"])
     direction = "ASC" if order.lower() == "asc" else "DESC"
     if group_series:

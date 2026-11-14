@@ -289,6 +289,9 @@ def test_group_series(client):
     assert next(b for b in g["items"] if not b["series"])["series_count"] == 1
     inside = client.get("/api/books", params={"series": "Dune Saga", "sort": "series", "order": "asc"}).json()
     assert [b["title"] for b in inside["items"]] == ["Dune", "Dune Messiah", "Children of Dune"]
+    only = client.get("/api/books", params={"in_series": "true"}).json()
+    assert only["total"] == 3 and all(b["series"] for b in only["items"])
+    assert client.get("/api/books", params={"in_series": "false"}).json()["total"] == 4
     paged = client.get("/api/books", params={"group_series": "true", "limit": 1, "offset": 1, "sort": "title", "order": "asc"}).json()
     assert paged["total"] == 2 and len(paged["items"]) == 1
 

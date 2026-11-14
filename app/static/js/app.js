@@ -112,7 +112,7 @@ const COLS = [
   ["description", "Description", "description", (b) => (b.description ? `<span class="c-desc" title="${esc(b.description)}">${esc(b.description)}</span>` : `<span class="muted">-</span>`), "c-desc-cell"],
 ];
 const DESC_FIRST = ["added", "size", "rating", "published"];   // columns whose first click should sort high-to-low
-const FILTERS = ["q", "author", "category", "format", "tag", "series"];   // library state that is sent to the API
+const FILTERS = ["q", "author", "category", "format", "tag", "series", "in_series"];   // library state that is sent to the API
 const SORT_OPTS = [["added", "Date added"], ...COLS.filter((c) => c[2] && c[2] !== "added").map((c) => [c[2], c[1] === "#" ? "Series #" : c[1]])];
 const paintDots = async (books, scope) => {
   const colors = await coverColors(books);
@@ -146,7 +146,7 @@ const VIEWS = {
   async library(root, params, alive, opts = {}) {
     const recent = !!opts.recent;
     const state = { q: params.get("q") || "", author: params.get("author") || "", category: params.get("category") || "",
-      format: params.get("format") || "", tag: params.get("tag") || "", series: params.get("series") || "",
+      format: params.get("format") || "", tag: params.get("tag") || "", series: params.get("series") || "", in_series: params.get("in_series") || "",
       sort: recent ? "added" : params.get("sort") || "title", order: recent ? "desc" : params.get("order") || "asc" };
     const list = getPref("view", "grid") === "list";
     const group = !list && !recent && !state.q && !state.series && getPref("series", "on") !== "off";   // the table shows every book and has a Series column
@@ -158,6 +158,8 @@ const VIEWS = {
         <button class="chip ${state.format ? "" : "on"}" data-f="">All</button>
         ${facets.formats.map((f) => `<button class="chip ${state.format === f.name ? "on" : ""}" data-f="${esc(f.name)}">${esc(f.name)} <small>${f.count}</small></button>`).join("")}
         <span class="grow"></span>
+        ${recent || state.series ? "" : `<label class="row-set" style="border:0;padding:0;gap:8px;align-items:center" title="Show only books that belong to a series"><span class="small">Series only</span>
+          <button class="switch" role="switch" id="sw-inseries" aria-checked="${!!state.in_series}" aria-label="Show only series books"></button></label>`}
         <select class="in" id="cat" aria-label="Category"><option value="">All categories</option>${facets.categories.map((c) => `<option ${state.category === c.name ? "selected" : ""} value="${esc(c.name)}">${esc(c.name)} (${c.count})</option>`).join("")}</select>
         <select class="in" id="sort" aria-label="Sort">${SORT_OPTS.map(([v, l]) => `<option value="${v}" ${state.sort === v ? "selected" : ""}>${l}</option>`).join("")}</select>
         <button class="btn sm" id="order" title="Toggle sort order">${state.order === "asc" ? "↑ Asc" : "↓ Desc"}</button>
@@ -183,6 +185,8 @@ const VIEWS = {
     root.querySelectorAll("[data-f]").forEach((b) => (b.onclick = () => set({ format: b.dataset.f })));
     root.querySelectorAll("[data-clear]").forEach((b) => (b.onclick = () => set({ [b.dataset.clear]: "" })));
     root.querySelector("#cat").onchange = (e) => set({ category: e.target.value });
+    const swSeries = root.querySelector("#sw-inseries");
+    if (swSeries) swSeries.onclick = (e) => { e.preventDefault(); set({ in_series: state.in_series ? "" : "1" }); };
     if (!recent) root.querySelector("#sort").onchange = (e) => set({ sort: e.target.value, order: DESC_FIRST.includes(e.target.value) ? "desc" : "asc" });
     if (!recent) root.querySelector("#order").onclick = () => set({ order: state.order === "asc" ? "desc" : "asc" });
 
@@ -202,7 +206,7 @@ const VIEWS = {
       if (list) paintDots(page.items, grid);
       count.textContent = group ? `${total} item${total === 1 ? "" : "s"} · series grouped` : `${total} book${total === 1 ? "" : "s"}`;
       if (!total) {
-        const filtered = state.q || state.author || state.category || state.format || state.tag || state.series;
+        const filtered = state.q || state.author || state.category || state.format || state.tag || state.series || state.in_series;
         selApi?.bar.remove();
         grid.outerHTML = filtered
           ? `<div class="empty"><h2>Nothing found</h2><p>Try a wildcard like <code>*${esc(state.q.replace(/\*/g, ""))}*</code> or a different filter.</p></div>`

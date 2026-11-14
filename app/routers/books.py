@@ -32,6 +32,7 @@ def list_books(
                   "subtitle", "series_index", "subcategory", "tags", "publisher", "language", "isbn", "filename",
                   "description"] = "added",
     order: Literal["asc", "desc"] = "desc",
+    in_series: bool = Query(False, description="Only books that belong to a series"),
     limit: int = Query(60, ge=1, le=500),
     offset: int = Query(0, ge=0),
     group_series: bool = Query(False, description="Collapse each series into a single entry (its first book, with `series_count`). "
@@ -39,7 +40,7 @@ def list_books(
 ):
     return service.list_books(q=q, author=author, category=category, fmt=format, tag=tag,
                               series=series, subcategory=subcategory, sort=sort, order=order, limit=limit, offset=offset,
-                              group_series=group_series)
+                              group_series=group_series, in_series=in_series)
 
 
 @router.get(
