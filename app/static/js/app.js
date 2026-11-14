@@ -1,4 +1,4 @@
-import { api, esc, icon, toast, hue, fmtBytes, emit, applyPrefs, getPref, setPref, coverColors, fallbackColor,
+import { api, esc, icon, toast, hue, fmtBytes, emit, auth, loadAuth, adminLogout, applyPrefs, getPref, setPref, coverColors, fallbackColor,
   progressHTML, setProgress, runBatches, batchMessage } from "./api.js";
 import "./components.js";
 
@@ -13,6 +13,28 @@ document.querySelectorAll("#nav a").forEach((a) => { const [i, l] = NAV[a.datase
 applyPrefs();
 
 const $ = (id) => document.getElementById(id);
+
+// ---- admin mode: a menu item to enter it, and a clear badge while it is on
+const adminNav = document.createElement("a");
+adminNav.href = "#"; adminNav.className = "admin-nav"; adminNav.setAttribute("role", "button");
+$("nav").append(adminNav);
+adminNav.onclick = async (e) => {
+  e.preventDefault();
+  if (auth.admin) { await adminLogout(); toast("Left admin mode"); } else $("login").open();
+};
+$("admin-badge").onclick = (e) => { if (e.target.closest("button")) adminNav.click(); };
+const paintAdmin = () => {
+  adminNav.hidden = !auth.enabled;
+  adminNav.classList.toggle("on", auth.admin);
+  adminNav.title = auth.admin ? "Click to leave admin mode" : "Log in to upload, edit and delete";
+  adminNav.innerHTML = auth.admin ? `${icon("shield")}<span>Admin mode ON</span>` : `${icon("lock")}<span>Admin mode</span>`;
+  const badge = $("admin-badge");
+  badge.hidden = !(auth.enabled && auth.admin);
+  badge.innerHTML = `${icon("shield")}<span>ADMIN MODE</span><button type="button" title="Leave admin mode">Exit</button>`;
+};
+paintAdmin();
+document.addEventListener("auth-changed", () => { paintAdmin(); $("drawer").close(); render(); });
+loadAuth();
 $("btn-upload").onclick = () => $("upload").open();
 $("btn-settings").onclick = () => $("settings").open();
 $("btn-export").onclick = () => $("export").open();
@@ -26,6 +48,7 @@ addEventListener("dragover", (e) => { if (hasFiles(e)) e.preventDefault(); });
 addEventListener("drop", (e) => {
   if (!hasFiles(e)) return;
   e.preventDefault(); dragDepth = 0; $("dropveil").classList.remove("on");
+  if (auth.enabled && !auth.admin) { toast("Enter admin mode to upload", "err"); $("login").open(); return; }
   $("upload").classList.add("open");
   $("upload").addFromDataTransfer(e.dataTransfer);
 });
@@ -122,7 +145,7 @@ const bookRow = (b, sel) => {
   const tr = document.createElement("tr");
   tr.tabIndex = 0; tr.dataset.id = b.id;
   tr.classList.toggle("sel", sel.has(b.id));
-  tr.innerHTML = `<td class="c-sel"><input type="checkbox" aria-label="Select ${esc(b.title)}"${sel.has(b.id) ? " checked" : ""}></td><td class="c-cover"><span class="dot" style="--c:${fallbackColor(b)}" title="Predominant cover colour"></span></td>`
+  tr.innerHTML = `<td class="c-sel admin-only"><input type="checkbox" aria-label="Select ${esc(b.title)}"${sel.has(b.id) ? " checked" : ""}></td><td class="c-cover"><span class="dot" style="--c:${fallbackColor(b)}" title="Predominant cover colour"></span></td>`
     + COLS.map(([, , , cell, cls]) => `<td class="${cls}">${cell(b)}</td>`).join("");
   const box = tr.querySelector(".c-sel input");
   tr.querySelector(".c-sel").onclick = (e) => { e.stopPropagation(); if (e.target !== box) box.click(); };   // the whole cell is the click target
@@ -134,7 +157,7 @@ const bookRow = (b, sel) => {
 };
 
 const emptyState = () => `<div class="empty"><h2>Your shelves are empty</h2><p>Add some books to get started — drop files or entire folders anywhere on this page.</p>
-  <button class="btn primary" onclick="document.getElementById('upload').open()">${icon("upload")}Add books</button></div>`;
+  <button class="btn primary admin-only" onclick="document.getElementById('upload').open()">${icon("upload")}Add books</button></div>`;
 
 const initials = (n) => n.split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]).join("").toUpperCase() || "?";
 const enc = encodeURIComponent;
@@ -169,7 +192,7 @@ const VIEWS = {
         </div>
       </div>
       <div class="toolbar" id="active"></div>` + (list
-      ? `<div class="tablewrap" id="grid"><table class="books"><thead><tr><th class="c-sel"><input type="checkbox" id="sel-all" aria-label="Select all loaded rows" title="Select all loaded rows"></th><th class="c-cover"></th>${COLS.map(([k, h, sk]) => sk
+      ? `<div class="tablewrap" id="grid"><table class="books"><thead><tr><th class="c-sel admin-only"><input type="checkbox" id="sel-all" aria-label="Select all loaded rows" title="Select all loaded rows"></th><th class="c-cover"></th>${COLS.map(([k, h, sk]) => sk
           ? `<th data-sort="${sk}" class="sortable ${state.sort === sk ? "sorted" : ""}" aria-sort="${state.sort === sk ? (state.order === "asc" ? "ascending" : "descending") : "none"}" title="Sort by ${h}">${h}${state.sort === sk ? (state.order === "asc" ? " ↑" : " ↓") : ""}</th>`
           : `<th>${h}</th>`).join("")}</tr></thead><tbody></tbody></table><div class="sentinel" id="more"></div></div>`
       : `<div class="grid" id="grid"></div><div class="sentinel" id="more"></div>`);
@@ -217,7 +240,7 @@ const VIEWS = {
     if (list) {
       // ---- row selection + bulk edit bar
       const sel = new Set(); let lastId = null;
-      const bar = document.createElement("div"); bar.className = "bulkbar"; grid.before(bar);   // in the page flow, right above the table
+      const bar = document.createElement("div"); bar.className = "bulkbar admin-only"; grid.before(bar);   // in the page flow, right above the table
       const rows = () => [...grid.querySelectorAll("tbody tr")];
       let running = false;   // an advanced bulk edit owns the bar until it finishes
       const openBulk = () => document.getElementById("bulkedit").open({
@@ -362,20 +385,20 @@ const VIEWS = {
         <div class="stat glass"><b class="grad-text">${fmtBytes(s.bytes)}</b><span class="muted">on disk</span></div>
         ${s.formats.map((f) => `<div class="stat glass"><b>${f.count}</b><span class="muted">${esc(f.name)}</span></div>`).join("")}
       </div>
-      <section class="glass" style="padding:22px;margin-bottom:18px">
+      <section class="glass admin-only" style="padding:22px;margin-bottom:18px">
         <h2>Duplicates &amp; cleanup</h2>
         <p class="muted">Books are fingerprinted with an MD5 of their content. Scan for duplicates, orphaned folders on disk and records whose file went missing. The oldest copy is always kept.</p>
         <div style="display:flex;gap:10px;flex-wrap:wrap"><button class="btn" id="scan">Scan (dry run)</button><button class="btn danger" id="clean" disabled>Clean up now</button></div>
         <pre id="report" class="log" style="display:none;white-space:pre-wrap"></pre>
       </section>
-      <section class="glass" style="padding:22px;margin-bottom:18px">
+      <section class="glass admin-only" style="padding:22px;margin-bottom:18px">
         <h2>Import from server folder</h2>
         <p class="muted">Recursively import books from the server's import directory (mounted at <code>/import</code> in Docker).</p>
         <div class="inline"><input class="in" id="ipath" placeholder="Sub-folder (blank = everything)"><button class="btn primary" id="imp">${icon("folder")}Import</button></div>
         <label class="check" style="margin-top:10px"><input type="checkbox" id="iovw"><span>Let JSON files overwrite existing metadata that differs <span class="muted">(books are imported first, then JSON)</span></span></label>
         <div id="iprog"></div>
       </section>
-      <section class="glass" style="padding:22px;margin-bottom:18px">
+      <section class="glass admin-only" style="padding:22px;margin-bottom:18px">
         <h2>Thumbnails</h2>
         <p class="muted">The library tiles use a small <code>book-name_thumb.jpg</code> stored next to each book, so covers load fast. New books get one automatically; refresh to scan the whole library and (re)create them all.</p>
         <button class="btn primary" id="thumbs">${icon("image")}Refresh thumbnails</button>
@@ -393,7 +416,7 @@ const VIEWS = {
         r.duplicates_removed.map((d) => `\n  • ${d.filename} (${d.title})`).join("");
       return n(r.duplicates_removed) + n(r.orphan_folders_removed) + n(r.missing_file_rows_removed);
     };
-    root.querySelector("#scan").onclick = async () => { clean.disabled = !show(await api("/cleanup")); };
+    root.querySelector("#scan").onclick = async () => { clean.disabled = !show(await api("/cleanup", { method: "POST" })); };
     clean.onclick = async () => {
       if (!confirm("Permanently remove the items listed in the scan?")) return;
       show(await api("/cleanup?dry_run=false", { method: "POST" })); clean.disabled = true; toast("Cleanup complete"); emit("library-changed");

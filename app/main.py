@@ -10,6 +10,7 @@ from fastapi.staticfiles import StaticFiles
 from . import __version__
 from .config import settings
 from .db import init_db
+from .auth import router as auth_router
 from .routers import books, library, upload
 
 STATIC = Path(__file__).parent / "static"
@@ -32,6 +33,7 @@ TAGS = [
     {"name": "Books", "description": "Browse, search, edit, rename, download."},
     {"name": "Upload", "description": "Single files, folder trees, archives and server-side imports."},
     {"name": "Export", "description": "Library export as ZIP."},
+    {"name": "Auth", "description": "Admin mode: log in to upload, edit and delete (reading never needs it)."},
     {"name": "Library", "description": "Facets, stats, duplicate detection and cleanup."},
 ]
 
@@ -64,6 +66,7 @@ async def content_security_policy(request: Request, call_next):
         response.headers["Content-Security-Policy"] = CSP
     return response
 
+app.include_router(auth_router, prefix="/api")
 app.include_router(books.router, prefix="/api")
 app.include_router(upload.router, prefix="/api")
 app.include_router(library.router, prefix="/api")

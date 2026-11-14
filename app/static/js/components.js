@@ -1,6 +1,6 @@
 // Web components (light DOM, themed by app.css).
 import { api, esc, icon, toast, coverHTML, fmtBytes, emit, THEMES, FONTS, clampFs, getPref, setPref,
-  progressHTML, setProgress, runBatches, batchMessage, webSearchUrl } from "./api.js";
+  progressHTML, setProgress, runBatches, batchMessage, webSearchUrl, auth, adminLogin } from "./api.js";
 
 const EXT_OK = new Set("epub pdf docx doc odt rtf txt md html htm mobi azw azw3 kfx fb2 djvu cbz cbr cb7 lit chm pdb zip json".split(" "));
 const extOf = (n) => n.split(".").pop().toLowerCase();
@@ -73,8 +73,8 @@ class MxDrawer extends HTMLElement {
               <a class="btn primary" href="/api/books/${b.id}/download">${icon("download")}Download</a>
               ${b.format === "pdf" ? `<a class="btn" target="_blank" rel="noopener" href="/api/books/${b.id}/download?inline=true">${icon("book")}Read</a>` : ""}
               <button class="btn" data-act="web-search" title="Opens a web search in a new tab for this book's title, author and ISBN as shown in the form below. Nothing is sent until you click.">${icon("search")}Web search</button>
-              <button class="btn" data-act="cover">${icon("image")}${b.cover_source === "user" ? "Replace cover" : "Upload cover"}</button>
-              ${b.cover_source === "user" ? `<button class="btn" data-act="uncover" title="Go back to the cover embedded in the book">Remove custom cover</button>` : ""}
+              <button class="btn admin-only" data-act="cover">${icon("image")}${b.cover_source === "user" ? "Replace cover" : "Upload cover"}</button>
+              ${b.cover_source === "user" ? `<button class="btn admin-only" data-act="uncover" title="Go back to the cover embedded in the book">Remove custom cover</button>` : ""}
               <input type="file" accept="image/*" hidden id="cover-in">
             </div>
           </div>
@@ -103,7 +103,7 @@ class MxDrawer extends HTMLElement {
                 ${st.embedded.length ? `<span class="muted">In file:</span>${st.embedded.map((f) => `<span class="pill in">${f}</span>`).join("")}` : ""}
                 ${st.sidecar.length ? `<span class="muted">In ${esc(st.sidecar_file || "sidecar")}:</span>${st.sidecar.map((f) => `<span class="pill side">${f}</span>`).join("")}` : ""}
               </div>
-              <button class="btn primary" type="submit">${icon("save")}Save metadata</button>
+              <button class="btn primary admin-only" type="submit">${icon("save")}Save metadata</button>
             </div>
           </form>
           <datalist id="cat-list"></datalist>
@@ -112,7 +112,7 @@ class MxDrawer extends HTMLElement {
         <section class="section">
           <h3>File</h3>
           <p class="small muted" style="margin-top:-4px">The file name is independent of the title — renaming one never changes the other.</p>
-          <form class="inline" id="rform"><input class="in" name="filename" value="${esc(stem)}" aria-label="File name"><span class="ext">${esc(ext)}</span><button class="btn" type="submit">Rename file</button></form>
+          <form class="inline admin-only" id="rform"><input class="in" name="filename" value="${esc(stem)}" aria-label="File name"><span class="ext">${esc(ext)}</span><button class="btn" type="submit">Rename file</button></form>
           <dl class="kv" style="margin-top:16px">
             <dt>Size</dt><dd>${fmtBytes(b.size)}</dd>
             <dt>UUID</dt><dd><code>${b.id}</code></dd>
@@ -123,9 +123,12 @@ class MxDrawer extends HTMLElement {
           </dl>
         </section>
 
-        <section class="section"><h3>Danger zone</h3><button class="btn danger" data-act="delete">${icon("trash")}Delete book</button></section>
+        <section class="section admin-only"><h3>Danger zone</h3><button class="btn danger" data-act="delete">${icon("trash")}Delete book</button></section>
       </aside>`;
     this.querySelector(".panel").scrollTop = prev;
+    if (auth.enabled && !auth.admin) {   // read-only view: show the details, but nothing can be typed into the form
+      this.querySelectorAll("#mform input, #mform textarea, #mform select, #mform button").forEach((el) => { el.disabled = true; });
+    }
     this.fillCategories();
     this.bind();
   }
@@ -253,6 +256,39 @@ class MxConfirm extends HTMLElement {
   }
 }
 customElements.define("mx-confirm", MxConfirm);
+
+// ------------------------------------------------------------------ <mx-login>
+class MxLogin extends HTMLElement {
+  connectedCallback() { document.addEventListener("admin-required", () => this.open()); }
+  open() {
+    if (!auth.enabled || auth.admin) return;
+    this.classList.add("open");
+    this.innerHTML = `<div class="scrim" style="position:absolute;inset:0;background:rgba(2,2,10,.6);backdrop-filter:blur(4px)"></div>
+      <form class="dialog glass cf" role="dialog" aria-labelledby="lg-title" autocomplete="on">
+        <h2 id="lg-title">${icon("shield")} Admin mode</h2>
+        <div class="muted small">Browsing is open to everyone. Log in to upload, edit and delete.</div>
+        <label class="field" style="margin-top:12px"><span>User name</span><input class="in" name="username" id="lg-user" autocomplete="username" required></label>
+        <label class="field" style="margin-top:8px"><span>Password</span><input class="in" name="password" type="password" autocomplete="current-password" required></label>
+        <div class="small" id="lg-err" role="alert" style="color:#ff6b81;min-height:1.2em;margin-top:8px"></div>
+        <div class="dialog-actions"><button class="btn" type="button" id="lg-no">Cancel</button><button class="btn primary" type="submit" id="lg-go">${icon("lock")}Log in</button></div>
+      </form>`;
+    const $ = (s) => this.querySelector(s);
+    const done = () => { document.removeEventListener("keydown", onKey, true); this.classList.remove("open"); this.innerHTML = ""; };
+    const onKey = (e) => { if (e.key === "Escape") { e.stopImmediatePropagation(); done(); } };
+    document.addEventListener("keydown", onKey, true);
+    $(".scrim").onclick = $("#lg-no").onclick = done;
+    $("form").onsubmit = async (e) => {
+      e.preventDefault();
+      const go = $("#lg-go"); go.disabled = true; $("#lg-err").textContent = "";
+      try {
+        await adminLogin($("#lg-user").value.trim(), e.target.password.value);
+        done(); toast("Admin mode on");
+      } catch (err) { go.disabled = false; $("#lg-err").textContent = err.message; e.target.password.select(); }
+    };
+    $("#lg-user").focus();
+  }
+}
+customElements.define("mx-login", MxLogin);
 
 // ------------------------------------------------------------------ <mx-bulkedit>
 const BULK_FIELDS = [["category", "Category"], ["subcategory", "Sub-category"], ["tags", "Tags"], ["author", "Author(s)"],

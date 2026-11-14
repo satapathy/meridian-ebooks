@@ -1,12 +1,13 @@
 import shutil
 from typing import Optional
 
-from fastapi import APIRouter, File, Form, UploadFile
+from fastapi import APIRouter, Depends, File, Form, UploadFile
 
 from .. import uploads
+from ..auth import require_admin
 from ..schemas import UploadReport
 
-router = APIRouter(prefix="/books", tags=["Upload"])
+router = APIRouter(prefix="/books", tags=["Upload"], dependencies=[Depends(require_admin)])
 
 
 def _store(upload: UploadFile):

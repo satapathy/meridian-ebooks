@@ -74,10 +74,21 @@ MERIDIAN_IMPORT=./import    # optional read-only folder for server-side imports
 MERIDIAN_UID=1000           # set to the output of `id -u`
 MERIDIAN_GID=1000           # set to the output of `id -g`
 MERIDIAN_PORT=8000
+MERIDIAN_ADMIN_USER=admin             # admin mode: see below
+MERIDIAN_ADMIN_PASSWORD=a-long-random-password
 ```
 
 Or pass them inline: `MERIDIAN_DATA=/srv/ebooks MERIDIAN_UID=$(id -u) MERIDIAN_GID=$(id -g) docker compose up --build`.
 On Docker Desktop (Windows/macOS) permissions are usually not an issue.
+
+A ready-made template with every option is in [`.env.example`](.env.example).
+
+**Admin mode.** Anyone who can reach the app can browse, search, download and export. Uploading, editing metadata,
+deleting and the maintenance tools need admin mode: click **Admin mode** in the left menu and log in with
+`MERIDIAN_ADMIN_USER` / `MERIDIAN_ADMIN_PASSWORD`. While you are in admin mode the menu shows an **ADMIN MODE** badge;
+the session lasts 12 hours or until you click **Exit**. If either value is empty, access control is off and every
+write is allowed. Scripts can send HTTP Basic credentials instead of logging in. Serve the app over HTTPS (for example
+behind a reverse proxy) if it is reachable from outside your own network, because the password is sent when you log in.
 
 ## Run
 

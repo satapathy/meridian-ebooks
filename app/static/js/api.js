@@ -26,6 +26,10 @@ export async function api(path, opts = {}) {
     throw e;
   }
   if (!res.ok) {
+    if (res.status === 401 && auth.enabled && !path.startsWith("/auth/")) {   // a write was refused: the session ended or admin mode was never entered
+      setAuth({ admin: false });
+      emit("admin-required");
+    }
     let detail = res.statusText;
     try {
       const j = await res.json();
@@ -44,6 +48,8 @@ const ICONS = {
   library: "M4 4h4v16H4z M10 4h4v16h-4z M16.6 5.6l3.8-1 3 14.8-3.8 1z",
   users: "M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2 M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8z M22 21v-2a4 4 0 0 0-3-3.9 M16 3.1a4 4 0 0 1 0 7.8",
   folder: "M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z",
+  lock: "M6 11h12a1 1 0 0 1 1 1v8a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1v-8a1 1 0 0 1 1-1z M8 11V7a4 4 0 0 1 8 0v4",
+  shield: "M12 3l8 3v6c0 4.5-3.2 8-8 9-4.8-1-8-4.5-8-9V6z M9 12l2 2 4-4",
   tools: "M4 6h10 M18 6h2 M4 12h4 M12 12h8 M4 18h12 M20 18h0 M14 4v4 M8 10v4 M16 16v4",
   upload: "M12 16V4 M7 9l5-5 5 5 M4 20h16",
   download: "M12 4v12 M7 11l5 5 5-5 M4 20h16",
@@ -158,6 +164,20 @@ export function webSearchUrl({ title = "", author = "", isbn = "" }) {
 }
 
 export const emit = (name, detail) => document.dispatchEvent(new CustomEvent(name, { detail }));
+
+// ---- admin mode. Reading is open to everyone; writes need a login (see app/auth.py). `enabled` is false when the
+// server has no admin credentials configured, in which case nothing is hidden and nobody has to log in.
+export const auth = { enabled: false, admin: false };
+export function setAuth(next) {
+  const before = `${auth.enabled}${auth.admin}`;
+  Object.assign(auth, next);
+  document.body.classList.toggle("auth-on", auth.enabled);
+  document.body.classList.toggle("is-admin", auth.enabled && auth.admin);
+  if (before !== `${auth.enabled}${auth.admin}`) emit("auth-changed", { ...auth });
+}
+export const loadAuth = async () => { try { const s = await api("/auth/status", { quiet: true }); setAuth({ enabled: s.auth_enabled, admin: s.admin }); } catch {} };
+export const adminLogin = async (username, password) => { const s = await api("/auth/login", { json: { username, password }, quiet: true }); setAuth({ enabled: s.auth_enabled, admin: s.admin }); };
+export const adminLogout = async () => { try { await api("/auth/logout", { method: "POST", quiet: true }); } catch {} setAuth({ admin: false }); };
 
 // ---- user preferences (theme, cover borders), persisted per browser
 export const THEMES = {

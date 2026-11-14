@@ -1,13 +1,16 @@
 import mimetypes
 from typing import Literal, Optional
 
-from fastapi import APIRouter, File, HTTPException, Query, Response, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, Query, Response, UploadFile
 from fastapi.responses import FileResponse
 
 from .. import service
 from ..schemas import Book, BookPage, BookUpdate, BulkDelete, BulkDeleteResult, BulkResult, BulkTransform, BulkUpdate, RenameFile
 
+from ..auth import require_admin
+
 router = APIRouter(prefix="/books", tags=["Books"])
+ADMIN = [Depends(require_admin)]   # on every route that changes the library
 
 
 @router.get("", response_model=BookPage, summary="Browse and search books")
@@ -96,7 +99,7 @@ def cover(book_id: str):
 
 
 @router.put(
-    "/{book_id}/cover", response_model=Book, summary="Upload a cover image (overrides the embedded cover)",
+    "/{book_id}/cover", dependencies=ADMIN, response_model=Book, summary="Upload a cover image (overrides the embedded cover)",
     description="Stored as `<book-name>-cover.jpg` in the book's folder, next to the `-info.json` sidecar. "
                 "It takes precedence over any cover embedded in the book when thumbnails are shown, "
                 "and follows the file if it is renamed. The book file itself is not modified.",
@@ -110,7 +113,7 @@ def set_cover(book_id: str, file: UploadFile = File(...)):
         raise HTTPException(400, str(e))
 
 
-@router.delete("/{book_id}/cover", response_model=Book, summary="Remove the uploaded cover (revert to the embedded one)")
+@router.delete("/{book_id}/cover", dependencies=ADMIN, response_model=Book, summary="Remove the uploaded cover (revert to the embedded one)")
 def remove_cover(book_id: str):
     try:
         return service.remove_user_cover(book_id)
@@ -119,7 +122,7 @@ def remove_cover(book_id: str):
 
 
 @router.patch(
-    "/{book_id}", response_model=Book, summary="Edit book metadata",
+    "/{book_id}", dependencies=ADMIN, response_model=Book, summary="Edit book metadata",
     description=(
         "Updates metadata. EPUB, PDF and DOCX store what they can **inside the file**; everything else "
         "(and any field the format cannot hold) goes to a `<book-name>-info.json` sidecar next to the book. "
@@ -137,7 +140,7 @@ def update_book(book_id: str, body: BookUpdate):
 
 
 @router.post(
-    "/bulk-update", response_model=BulkResult, summary="Apply the same metadata changes to many books",
+    "/bulk-update", dependencies=ADMIN, response_model=BulkResult, summary="Apply the same metadata changes to many books",
     description=("Sends `fields` (same shape as `PATCH /books/{id}`) to every book in `ids`. Only the fields you include are "
                  "changed; send an empty string to clear one. `tags_mode: add` appends the tags to each book's own tags "
                  "instead of replacing them. A missing id is reported in `failed` and does not stop the others."),
@@ -150,7 +153,7 @@ def bulk_update(body: BulkUpdate):
 
 
 @router.post(
-    "/bulk-transform", response_model=BulkResult, summary="Clean up one text field of many books (advanced bulk edit)",
+    "/bulk-transform", dependencies=ADMIN, response_model=BulkResult, summary="Clean up one text field of many books (advanced bulk edit)",
     description=("Applies one operation to `field` of every book in `ids`: `lowercase`, `uppercase`, `capitalize`, `titlecase`, "
                  "`replace` (word/phrase `find` -> `replace_with`, empty removes it), `collapse_spaces` or `trim`. "
                  "`tags` are transformed tag by tag. Books that would not change are counted in `unchanged` and not rewritten."),
@@ -164,7 +167,7 @@ def bulk_transform(body: BulkTransform):
 
 
 @router.post(
-    "/bulk-delete", response_model=BulkDeleteResult, summary="Delete many books and their files",
+    "/bulk-delete", dependencies=ADMIN, response_model=BulkDeleteResult, summary="Delete many books and their files",
     description=("**Permanent.** Removes every book in `ids` from the library and deletes its folder on disk (the book file, its cover "
                  "and metadata sidecar), then removes any folders left empty. A missing id is listed in `failed` and does not stop the others."),
 )
@@ -172,7 +175,7 @@ def bulk_delete(body: BulkDelete):
     return service.bulk_delete(body.ids)
 
 
-@router.post("/{book_id}/rename", response_model=Book, summary="Rename the file on disk (not the title)")
+@router.post("/{book_id}/rename", dependencies=ADMIN, response_model=Book, summary="Rename the file on disk (not the title)")
 def rename(book_id: str, body: RenameFile):
     try:
         return service.rename_file(book_id, body.filename)
@@ -184,7 +187,7 @@ def rename(book_id: str, body: RenameFile):
         raise HTTPException(409, str(e))
 
 
-@router.delete("/{book_id}", status_code=204, summary="Delete a book and its files",
+@router.delete("/{book_id}", dependencies=ADMIN, status_code=204, summary="Delete a book and its files",
                description="**Permanent.** Removes the record and deletes the book file, cover and sidecar from disk, plus any folders left empty.")
 def delete(book_id: str):
     try:

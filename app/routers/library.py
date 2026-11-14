@@ -6,11 +6,12 @@ from datetime import datetime
 from pathlib import Path
 from typing import Literal, Optional
 
-from fastapi import APIRouter, BackgroundTasks, HTTPException, Query
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from fastapi.responses import FileResponse
 from starlette.background import BackgroundTask
 
 from .. import service, uploads
+from ..auth import require_admin
 from ..config import settings
 from ..exporter import build_export
 from ..schemas import Facets, ImportJob, ImportRequest, ThumbJob
@@ -75,7 +76,7 @@ def _run_thumbs() -> None:
 
 
 @router.post(
-    "/thumbnails/rebuild", response_model=ThumbJob, tags=["Library"], summary="Regenerate every book's thumbnail",
+    "/thumbnails/rebuild", dependencies=[Depends(require_admin)], response_model=ThumbJob, tags=["Library"], summary="Regenerate every book's thumbnail",
     description="Scans the whole library and writes `<book-name>_thumb.jpg` next to each book (from its user cover, else its embedded cover). "
                 "Runs in the background - poll `GET /thumbnails/rebuild`. A second call while one is running returns the running job.",
 )
@@ -98,7 +99,7 @@ def duplicates():
 
 
 @router.post(
-    "/cleanup", tags=["Library"], summary="Remove duplicates, orphan folders and dangling records",
+    "/cleanup", dependencies=[Depends(require_admin)], tags=["Library"], summary="Remove duplicates, orphan folders and dangling records",
     description="The oldest copy of each duplicate group is kept. **Defaults to a dry run** - pass `dry_run=false` to apply.",
 )
 def cleanup(dry_run: bool = True):
@@ -146,7 +147,7 @@ def _run_import(job_id: str, root: Path, use_folders: bool, overwrite: bool) -> 
 
 
 @router.post(
-    "/import", response_model=ImportJob, tags=["Upload"], summary="Import a folder that is already on the server",
+    "/import", dependencies=[Depends(require_admin)], response_model=ImportJob, tags=["Upload"], summary="Import a folder that is already on the server",
     description="Recursively imports books from the server's import directory (the `/import` volume in Docker). "
                 "Books are imported first, then metadata `*.json` files (see `POST /books/upload`). "
                 "Runs in the background - poll `GET /import/{job_id}`; `errors` also lists JSON warnings.",

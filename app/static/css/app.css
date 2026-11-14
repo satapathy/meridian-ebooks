@@ -250,8 +250,8 @@ mx-drawer.open { display: block; }
 .inline { display: flex; gap: 8px; align-items: center; } .inline .in { flex: 1; } .inline .ext { color: var(--muted); }
 
 /* ============ Dialogs ============ */
-mx-upload, mx-export, mx-settings, mx-bulkedit, mx-confirm { position: fixed; inset: 0; z-index: 70; display: none; place-items: center; padding: 20px; }
-mx-upload.open, mx-export.open, mx-settings.open, mx-bulkedit.open, mx-confirm.open { display: grid; }
+mx-upload, mx-export, mx-settings, mx-bulkedit, mx-confirm, mx-login { position: fixed; inset: 0; z-index: 70; display: none; place-items: center; padding: 20px; }
+mx-upload.open, mx-export.open, mx-settings.open, mx-bulkedit.open, mx-confirm.open, mx-login.open { display: grid; }
 
 /* Cover frame: --bw is the border thickness (Settings). 0 = bare cover stretched to fill (FitXY). */
 :root { --bw: 6px; }
@@ -381,6 +381,20 @@ table.books tbody tr.sel { background: color-mix(in srgb, var(--a1) 16%, transpa
 .bk-mode { display: flex; gap: 16px; flex-wrap: wrap; }
 
 .btn[hidden] { display: none; }
+/* admin mode: with access control on, write controls only show while logged in as admin */
+body.auth-on:not(.is-admin) .admin-only { display: none !important; }
+#nav a.admin-nav { cursor: pointer; margin-top: 8px; border-top: 1px solid var(--line); border-radius: 0 0 9px 9px; padding-top: 10px; }
+#nav a.admin-nav[hidden] { display: none; }
+#nav a.admin-nav.on { color: var(--on-accent); background: linear-gradient(110deg, var(--a1), var(--a2)); border-top-color: transparent; border-radius: 9px; font-weight: 700; }
+.admin-badge { display: flex; align-items: center; gap: 8px; margin: 0 4px; padding: 8px 10px; border-radius: 10px; color: var(--on-accent); font-weight: 700; font-size: 0.75rem; letter-spacing: .06em; white-space: nowrap;
+  background: linear-gradient(110deg, var(--a1), var(--a2)); box-shadow: 0 8px 26px -10px var(--a1); }
+.admin-badge[hidden] { display: none; }
+.admin-badge svg { width: 17px; height: 17px; flex: none; }
+.admin-badge span { flex: 1; }
+.admin-badge button { all: unset; cursor: pointer; font-size: 0.6875rem; letter-spacing: .04em; padding: 3px 8px; border-radius: 7px; background: rgba(0,0,0,.22); }
+.admin-badge button:hover { background: rgba(0,0,0,.38); }
+body.is-admin .rail { box-shadow: inset 3px 0 0 var(--a1); }
+@media (max-width: 860px) { .admin-badge { display: none; } body.is-admin .rail { box-shadow: inset 0 3px 0 var(--a1); } }
 
 /* ---- List view: colour dot instead of a cover thumbnail ---- */
 table.books .dot { display: block; width: 8px; height: 8px; border-radius: 50%; background: radial-gradient(circle at 32% 28%, color-mix(in srgb, var(--c) 55%, #fff), var(--c) 65%); box-shadow: 0 0 0 1px color-mix(in srgb, var(--c) 60%, #000 25%), 0 1px 3px color-mix(in srgb, var(--c) 45%, transparent); transition: background .3s; }

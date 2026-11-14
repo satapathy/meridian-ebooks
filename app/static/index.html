@@ -24,6 +24,7 @@
       <a href="#/categories" data-route="categories"></a>
       <a href="#/tools" data-route="tools"></a>
     </nav>
+    <div class="admin-badge" id="admin-badge" role="status" hidden></div>
     <div class="rail-foot">
       <div class="muted small" id="rail-stats"></div>
       <a class="small muted" href="/docs" target="_blank" rel="noopener">API · Swagger ↗</a>
@@ -40,7 +41,7 @@
       </form>
       <button class="btn ghost" id="btn-settings" aria-label="Settings" title="Settings"><span data-icon="settings"></span></button>
       <button class="btn ghost" id="btn-export"><span data-icon="download"></span><span class="lbl">Export</span></button>
-      <button class="btn primary" id="btn-upload"><span data-icon="upload"></span><span class="lbl">Add books</span></button>
+      <button class="btn primary admin-only" id="btn-upload"><span data-icon="upload"></span><span class="lbl">Add books</span></button>
     </header>
     <main id="view" tabindex="-1"></main>
   </div>
@@ -52,6 +53,7 @@
 <mx-settings id="settings"></mx-settings>
 <mx-bulkedit id="bulkedit"></mx-bulkedit>
 <mx-confirm id="confirm"></mx-confirm>
+<mx-login id="login"></mx-login>
 <div class="dropveil" id="dropveil"><div>Drop books or folders to add them</div></div>
 <div id="toasts" aria-live="polite"></div>
 
